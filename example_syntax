@@ -1,0 +1,498 @@
+Custom language syntax examples
+===============================
+
+This file is a practical tour of the custom language used by this project.
+It is written for someone who has never seen the project before.
+
+File extensions:
+- .l files are translated to .c files.
+- .H files are translated to .h files with automatic include guards.
+
+General advice:
+- Write one statement per line.
+- Use consistent indentation, preferably 4 spaces.
+- Do not write C braces for .l blocks.
+- A block starts when the next line is more indented.
+- A block ends when indentation decreases.
+- Use -without-binary -keep_c to inspect the generated C.
+
+
+1. Minimal .l program
+--------------------
+
+Source: hello.l
+
+int main()
+    name = "Ada"
+    print("Hello {name}")
+    return 0
+
+Command:
+
+./compilateur hello.l -o hello
+./hello
+
+Output:
+
+Hello Ada
+
+
+2. Minimal .H header
+-------------------
+
+Source: math_tools.H
+
+#all
+
+int square(int x);
+int sum_until(int n);
+
+Generated file: math_tools.h
+
+#ifndef MATH_TOOLS_H
+#define MATH_TOOLS_H
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdbool.h>
+#include <math.h>
+#include <time.h>
+
+int square(int x);
+int sum_until(int n);
+
+#endif /* MATH_TOOLS_H */
+
+
+3. Variables and simple type inference
+--------------------------------------
+
+int main()
+    age = 42
+    temperature = 19.5
+    initial = 'A'
+    message = "ready"
+    active = True
+
+    print("age={age}")
+    print("temperature={temperature}")
+    print("initial={initial}")
+    print("message={message}")
+    print("active={active}")
+
+    age = age + 1
+    print("new age={age}")
+
+    return 0
+
+Notes:
+- True becomes true.
+- False becomes false.
+- A first assignment declares a variable.
+- A later assignment updates the existing variable.
+- Identifiers must start with a letter or underscore.
+
+
+4. Functions
+------------
+
+int square(int x)
+    return x * x
+
+int sum_until(int n)
+    total = 0
+    for i in range(n):
+        total = total + i
+    return total
+
+int main()
+    x = 6
+    square_result = square(x)
+    sum_result = sum_until(5)
+    print("square={square_result}, sum={sum_result}")
+    return 0
+
+
+5. Conditions
+-------------
+
+int main()
+    score = 12
+
+    if score >= 10:
+        print("passed")
+    else:
+        print("try again")
+
+    if score == 12:
+        print("perfect score")
+
+    return 0
+
+The colon is accepted after if and else. Indentation is still required.
+
+
+6. while loop
+-------------
+
+int main()
+    i = 0
+
+    while i < 3:
+        print("i={i}")
+        i = i + 1
+
+    return 0
+
+
+7. for loop with range
+----------------------
+
+int main()
+    for i in range(5):
+        print("turn {i}")
+
+    return 0
+
+Conceptual C translation:
+
+for (int i = 0; i < 5; i++)
+
+
+8. print and interpolation
+--------------------------
+
+int main()
+    name = "Ada"
+    age = 36
+    total = 7 + 5
+
+    print("name={name}")
+    print("age={age}, total={total}")
+    print(age)
+
+    return 0
+
+Interpolation uses {variable} inside a double-quoted string.
+
+
+9. Integer lists
+----------------
+
+int main()
+    numbers = [10, 20, 30, 40]
+
+    print("length={numbers_len}")
+    print("first={numbers[0]}")
+    print("second={numbers[1]}")
+
+    return 0
+
+A list creates:
+- a dynamically allocated array named numbers;
+- a length variable named numbers_len;
+- automatic free calls before return.
+
+
+10. Lists of other types
+------------------------
+
+int main()
+    notes = [12.5, 15.0, 18.5]
+    words = ["one", "two", "three"]
+    flags = [true, false, true]
+
+    print("first note={notes[0]}")
+    print("first word={words[0]}")
+    print("first flag={flags[0]}")
+
+    return 0
+
+Lists must be homogeneous.
+
+Rejected example:
+
+int main()
+    mixed = [1, 2.5, "text"]
+    return 0
+
+
+11. List decomposition with ::
+-----------------------------
+
+int main()
+    numbers = [10, 20, 30]
+
+    head::tail = numbers
+
+    print("head={head}")
+    print("tail length={tail_len}")
+    print("first tail item={tail[0]}")
+
+    return 0
+
+The line head::tail = numbers creates:
+- head, equal to numbers[0];
+- tail, pointing to numbers + 1;
+- tail_len, equal to numbers_len - 1.
+
+
+12. match on a value
+--------------------
+
+int main()
+    code = 2
+
+    match code with
+        | 0 -> print("zero")
+        | 1 -> print("one")
+        | 2 -> print("two")
+        | _ -> print("other")
+
+    return 0
+
+Conceptual C translation:
+
+if (code == 0)
+    ...
+else if (code == 1)
+    ...
+else if (code == 2)
+    ...
+else
+    ...
+
+
+13. match with guards
+---------------------
+
+int main()
+    n = 15
+
+    match n with
+        | _ if n < 0 -> print("negative")
+        | _ if n == 0 -> print("zero")
+        | _ if n > 10 -> print("large positive")
+        | _ -> print("small positive")
+
+    return 0
+
+A guard uses this shape:
+
+| _ if condition -> action
+
+
+14. match on a list
+-------------------
+
+int main()
+    items = [10, 20, 30]
+
+    match items with
+        | [] -> print("empty list")
+        | [x] -> print("one item: {x}")
+        | head::tail -> print("many items, first={head}, rest={tail_len}")
+
+    return 0
+
+Supported list patterns:
+- [] matches an empty list.
+- [x] matches a single-item list and binds the item to x.
+- head::tail matches a non-empty list, binds the first element, and binds the rest.
+
+
+15. Comments in .l files
+------------------------
+
+int main()
+    # This becomes a C comment in the generated file
+    value = 123
+    print("value={value}")
+    return 0
+
+Lines starting with # are directives when recognized.
+Unknown # lines in .l files become C comments.
+
+
+16. Include directives
+----------------------
+
+#all
+#linux
+
+int main()
+    print("includes were added")
+    return 0
+
+.l files already generate these base includes:
+- stdio.h
+- stdlib.h
+- stdbool.h
+- string.h
+
+#all adds:
+- math.h
+- time.h
+
+#linux adds:
+- unistd.h
+- sys/types.h
+- sys/wait.h
+
+.H files also support:
+- #windows, which includes windows.h
+- #mac, which includes TargetConditionals.h and Availability.h
+
+
+17. Child and parent process helpers
+------------------------------------
+
+#linux
+
+int main()
+    #process
+    #enfant
+        print("inside the child process")
+        return 0
+    #parent basic
+        print("inside the parent after waitpid")
+
+    return 0
+
+Notes:
+- #process emits fork().
+- #enfant emits if (pid == 0).
+- #parent emits else.
+- #parent basic emits else, waitpid, and an exit-status check.
+- This depends on POSIX APIs.
+
+
+18. POSIX pipe helper
+---------------------
+
+#linux
+
+int main()
+    #pipe
+    print("pipe created")
+    return 0
+
+#pipe declares pipe_fd and calls pipe(pipe_fd).
+
+
+19. Mixing .l syntax and raw C
+------------------------------
+
+#linux
+
+int main()
+    counter = 3
+    printf("raw printf call with normal C syntax\n");
+
+    if counter > 0:
+        print("counter is positive")
+
+    return 0
+
+Tip: for complex raw C, keep complete C syntax.
+
+
+20. Passing gcc options
+-----------------------
+
+Compile with warnings:
+
+./compilateur main.l -Wall -Wextra -o app
+
+Compile with the math library:
+
+./compilateur main.l -lm -o app
+
+Translate only and keep the generated C:
+
+./compilateur main.l -without-binary -keep_c
+
+Translate a header only and keep the generated header:
+
+./compilateur api.H -without-binary -keep_h
+
+
+21. Complete program
+--------------------
+
+Source: demo.l
+
+#all
+#linux
+
+int square(int x)
+    return x * x
+
+int sum_until(int n)
+    total = 0
+    for i in range(n):
+        total = total + i
+    return total
+
+int main()
+    name = "Ada"
+    limit = 5
+    total = sum_until(limit)
+    square_of_four = square(4)
+
+    print("Hello {name}")
+    print("sum before {limit} = {total}")
+    print("square of 4 = {square_of_four}")
+
+    values = [10, 20, 30]
+    head::tail = values
+    print("first={head}, remaining={tail_len}")
+
+    match total with
+        | 0 -> print("zero")
+        | _ if total > 5 -> print("greater than five")
+        | _ -> print("small total")
+
+    match values with
+        | [] -> print("no values")
+        | [x] -> print("one value {x}")
+        | head2::tail2 -> print("several values, first={head2}")
+
+    return 0
+
+Recommended command for learning:
+
+./compilateur demo.l -without-binary -keep_c
+
+Then open demo.c and compare it with demo.l.
+
+
+22. Common errors
+-----------------
+
+Invalid identifier:
+
+int main()
+    123bad = 10
+    return 0
+
+Mixed list types:
+
+int main()
+    mixed = [1, 2.5, "text"]
+    return 0
+
+Malformed list decomposition:
+
+int main()
+    values = [1, 2, 3]
+    head:: = values
+    return 0
+
+Malformed match:
+
+int main()
+    match with
+        | 1 -> print("bad")
+    return 0
