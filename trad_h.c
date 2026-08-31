@@ -9,15 +9,17 @@ int trad_h(char *filename, char ***text_ptr)
 {
     if (filename == NULL || text_ptr == NULL || *text_ptr == NULL)
     {
-        fprintf(stderr, "ERREUR : Paramètres invalides fournis à trad_h.\n");
+        report_message("ERREUR : Paramètres invalides fournis à trad_h.\n",
+                       "ERROR : Invalid parameters provided to trad_h.\n");
         return 1;
     }
 
     size_t len = strlen(filename);
-    char *new_name = strdup(filename);
+    char *new_name = duplicate_string(filename);
     if (new_name == NULL)
     {
-        fprintf(stderr, "ERREUR SYSTEME : Échec d'allocation mémoire pour 'new_name'.\n");
+        report_message("ERREUR SYSTEME : Échec d'allocation mémoire pour 'new_name'.\n",
+                       "SYSTEM ERROR : Memory allocation failed for 'new_name'.\n");
         return 1;
     }
     
@@ -29,12 +31,18 @@ int trad_h(char *filename, char ***text_ptr)
     FILE *file = fopen(new_name, "w");
     if (file == NULL)
     {
-        fprintf(stderr, "ERREUR FICHIER : Impossible de créer ou d'ouvrir le fichier cible '%s'.\n", new_name);
+        report_message("ERREUR FICHIER : Impossible de créer ou d'ouvrir le fichier cible '%s'.\n",
+                       "FILE ERROR : Cannot create or open target file '%s'.\n", new_name);
         free(new_name);
         return 1;
     }
 
     char *basename = strrchr(filename, '/');
+    char *windows_basename = strrchr(filename, '\\');
+    if (windows_basename != NULL && (basename == NULL || windows_basename > basename))
+    {
+        basename = windows_basename;
+    }
     if (basename == NULL)
     {
         basename = filename;
@@ -49,7 +57,8 @@ int trad_h(char *filename, char ***text_ptr)
     char *guard_name = malloc(base_len + 3);
     if (guard_name == NULL)
     {
-        fprintf(stderr, "ERREUR SYSTEME : Échec d'allocation mémoire pour 'guard_name'.\n");
+        report_message("ERREUR SYSTEME : Échec d'allocation mémoire pour 'guard_name'.\n",
+                       "SYSTEM ERROR : Memory allocation failed for 'guard_name'.\n");
         fclose(file);
         free(new_name);
         return 1;
@@ -119,4 +128,3 @@ int trad_h(char *filename, char ***text_ptr)
 
     return 0;
 }
-

@@ -33,10 +33,8 @@ void remove_created_files(char **created_filenames, char **new_option)
         {
             if (remove(created_filenames[i]) != 0)
             {
-                if (flag_french)
-                    fprintf(stderr, "ERREUR SYSTEME : Impossible de supprimer le fichier temporaire '%s'.\n", created_filenames[i]);
-                else
-                    fprintf(stderr, "SYSTEM ERROR : Failed to remove temporary file '%s'.\n", created_filenames[i]);
+                report_message("ERREUR SYSTEME : Impossible de supprimer le fichier temporaire '%s'.\n",
+                               "SYSTEM ERROR : Failed to remove temporary file '%s'.\n", created_filenames[i]);
             }
         }
         else if (!keep_h && strcmp(created_filenames[i] + len - 2, ".h") == 0)
@@ -51,18 +49,14 @@ void remove_created_files(char **created_filenames, char **new_option)
             }
             else
             {
-                if (flag_french)
-                    fprintf(stderr, "ERREUR SYSTEME : Échec d'allocation mémoire pour 'gch_filename'.\n");
-                else
-                    fprintf(stderr, "SYSTEM ERROR : Memory allocation failed for 'gch_filename'.\n");
+                report_message("ERREUR SYSTEME : Échec d'allocation mémoire pour 'gch_filename'.\n",
+                               "SYSTEM ERROR : Memory allocation failed for 'gch_filename'.\n");
             }
 
             if (remove(created_filenames[i]) != 0)
             {
-                if (flag_french)
-                    fprintf(stderr, "ERREUR SYSTEME : Impossible de supprimer le fichier temporaire '%s'.\n", created_filenames[i]);
-                else
-                    fprintf(stderr, "SYSTEM ERROR : Failed to remove temporary file '%s'.\n", created_filenames[i]);
+                report_message("ERREUR SYSTEME : Impossible de supprimer le fichier temporaire '%s'.\n",
+                               "SYSTEM ERROR : Failed to remove temporary file '%s'.\n", created_filenames[i]);
             }
         }
     }
@@ -80,10 +74,8 @@ void remove_H_files(char **filename)
         {
             if (remove(filename[i]) != 0)
             {
-                if (flag_french)
-                    fprintf(stderr, "ERREUR SYSTEME : Impossible de supprimer le fichier source '%s'.\n", filename[i]);
-                else
-                    fprintf(stderr, "SYSTEM ERROR : Failed to remove source file '%s'.\n", filename[i]);
+                report_message("ERREUR SYSTEME : Impossible de supprimer le fichier source '%s'.\n",
+                               "SYSTEM ERROR : Failed to remove source file '%s'.\n", filename[i]);
             }
         }
     }
@@ -101,10 +93,8 @@ void remove_l_files(char **filename)
         {
             if (remove(filename[i]) != 0)
             {
-                if (flag_french)
-                    fprintf(stderr, "ERREUR SYSTEME : Impossible de supprimer le fichier source '%s'.\n", filename[i]);
-                else
-                    fprintf(stderr, "SYSTEM ERROR : Failed to remove source file '%s'.\n", filename[i]);
+                report_message("ERREUR SYSTEME : Impossible de supprimer le fichier source '%s'.\n",
+                               "SYSTEM ERROR : Failed to remove source file '%s'.\n", filename[i]);
             }
         }
     }

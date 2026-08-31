@@ -10,20 +10,16 @@ int execute(char **filename, char *output, char **options)
 {
     if (filename == NULL || filename[0] == NULL)
     {
-        if (flag_french)
-            fprintf(stderr, "ERREUR : Liste de fichiers sources vide ou non initialisée pour la compilation C.\n");
-        else
-            fprintf(stderr, "ERROR : Source file list is empty or uninitialized for C compilation.\n");
+        report_message("ERREUR : Liste de fichiers sources vide ou non initialisée pour la compilation C.\n",
+                       "ERROR : Source file list is empty or uninitialized for C compilation.\n");
         return 1;
     }
     
     pid_t pid = fork();
     if (pid < 0)
     {
-        if (flag_french)
-            fprintf(stderr, "ERREUR SYSTEME : L'initialisation du processus enfant (fork) a échoué.\n");
-        else
-            fprintf(stderr, "SYSTEM ERROR : Child process initialization (fork) failed.\n");
+        report_message("ERREUR SYSTEME : L'initialisation du processus enfant (fork) a échoué.\n",
+                       "SYSTEM ERROR : Child process initialization (fork) failed.\n");
         return -1;
     }
 
@@ -50,10 +46,8 @@ int execute(char **filename, char *output, char **options)
         char **commande = malloc(sizeof(char *) * total_arg);
         if (commande == NULL)
         {
-            if (flag_french)
-                fprintf(stderr, "ERREUR SYSTEME : Échec d'allocation mémoire pour 'commande'.\n");
-            else
-                fprintf(stderr, "SYSTEM ERROR : Memory allocation failed for 'commande'.\n");
+            report_message("ERREUR SYSTEME : Échec d'allocation mémoire pour 'commande'.\n",
+                           "SYSTEM ERROR : Memory allocation failed for 'commande'.\n");
             exit(EXIT_FAILURE);
         }
         
@@ -80,10 +74,8 @@ int execute(char **filename, char *output, char **options)
 
         execvp("gcc", commande);
 
-        if (flag_french)
-            fprintf(stderr, "ERREUR SYSTEME : L'exécution du compilateur 'gcc' via execvp a échoué.\n");
-        else
-            fprintf(stderr, "SYSTEM ERROR : Execution of 'gcc' compiler via execvp failed.\n");
+        report_message("ERREUR SYSTEME : L'exécution du compilateur 'gcc' via execvp a échoué.\n",
+                       "SYSTEM ERROR : Execution of 'gcc' compiler via execvp failed.\n");
         free(commande);
         exit(EXIT_FAILURE);
     }
@@ -98,10 +90,8 @@ int execute(char **filename, char *output, char **options)
         }
         else 
         {
-            if (flag_french)
-                fprintf(stderr, "ERREUR : La compilation C intermédiaire avec GCC a échoué.\n");
-            else
-                fprintf(stderr, "ERROR : Intermediate C compilation with GCC failed.\n");
+            report_message("ERREUR : La compilation C intermédiaire avec GCC a échoué.\n",
+                           "ERROR : Intermediate C compilation with GCC failed.\n");
             return -1;
         }
     }

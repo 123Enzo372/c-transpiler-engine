@@ -5,6 +5,27 @@
 
 int flag_french = 0;
 
+static int append_argument(char ***items, int *count, int *capacity, char *value, const char *name)
+{
+    if (*count >= *capacity - 1)
+    {
+        int new_capacity = *capacity + 10;
+        char **tmp = realloc(*items, sizeof(char *) * new_capacity);
+        if (tmp == NULL)
+        {
+            report_message("ERREUR SYSTEME : Échec de réallocation mémoire pour '%s'.\n",
+                           "SYSTEM ERROR : Memory reallocation failed for '%s'.\n", name);
+            return 0;
+        }
+        *items = tmp;
+        *capacity = new_capacity;
+    }
+
+    (*items)[(*count)++] = value;
+    (*items)[*count] = NULL;
+    return 1;
+}
+
 int main(int argc, char *argv[]) 
 {
     /* Première passe pour détecter le flag -french préventivement */
@@ -19,47 +40,39 @@ int main(int argc, char *argv[])
 
     if (argc < 2)
     {
-        if (flag_french)
-            fprintf(stderr, "ERREUR : Nom de fichier ou argument manquant.\n");
-        else
-            fprintf(stderr, "ERROR : Missing file name or argument.\n");
+        report_message("ERREUR : Nom de fichier ou argument manquant.\n",
+                       "ERROR : Missing file name or argument.\n");
         return 1;
     }
     
     int index_file = 0;    
     int size_file = 10;
-    char **filename = malloc(sizeof(char *) * size_file);
+    char **filename = calloc(size_file, sizeof(char *));
     if (filename == NULL)
     {
-        if (flag_french)
-            fprintf(stderr, "ERREUR SYSTEME : Échec d'allocation mémoire pour 'filename'.\n");
-        else
-            fprintf(stderr, "SYSTEM ERROR : Memory allocation failed for 'filename'.\n");
+        report_message("ERREUR SYSTEME : Échec d'allocation mémoire pour 'filename'.\n",
+                       "SYSTEM ERROR : Memory allocation failed for 'filename'.\n");
         return 1;
     }
     
     int index_option = 0;
     int size_option = 20;
-    char **options = malloc(sizeof(char *) * size_option);
+    char **options = calloc(size_option, sizeof(char *));
     if (options == NULL)
     {
-        if (flag_french)
-            fprintf(stderr, "ERREUR SYSTEME : Échec d'allocation mémoire pour 'options'.\n");
-        else
-            fprintf(stderr, "SYSTEM ERROR : Memory allocation failed for 'options'.\n");
+        report_message("ERREUR SYSTEME : Échec d'allocation mémoire pour 'options'.\n",
+                       "SYSTEM ERROR : Memory allocation failed for 'options'.\n");
         free(filename);
         return 1;
     }
 
     int index_new_option = 0;
     int size_new_option = 10;
-    char **new_option = malloc(sizeof(char *) * size_new_option);
+    char **new_option = calloc(size_new_option, sizeof(char *));
     if (new_option == NULL)
     {
-        if (flag_french)
-            fprintf(stderr, "ERREUR SYSTEME : Échec d'allocation mémoire pour 'new_option'.\n");
-        else
-            fprintf(stderr, "SYSTEM ERROR : Memory allocation failed for 'new_option'.\n");
+        report_message("ERREUR SYSTEME : Échec d'allocation mémoire pour 'new_option'.\n",
+                       "SYSTEM ERROR : Memory allocation failed for 'new_option'.\n");
         free(filename);
         free(options);
         return 1;
@@ -73,21 +86,8 @@ int main(int argc, char *argv[])
         
         if (len >= 2 && (strcmp(argv[i] + len - 2, ".l") == 0 || strcmp(argv[i] + len - 2, ".H") == 0))
         {
-            if (index_file >= size_file - 1)
-            {
-                size_file += 10;
-                char **tmp = realloc(filename, sizeof(char *) * size_file);  
-                if (tmp == NULL)
-                {
-                    if (flag_french)
-                        fprintf(stderr, "ERREUR SYSTEME : Échec de réallocation mémoire pour 'filename'.\n");
-                    else
-                        fprintf(stderr, "SYSTEM ERROR : Memory reallocation failed for 'filename'.\n");
-                    goto cleanup_and_exit;
-                }
-                filename = tmp;
-            }
-            filename[index_file++] = argv[i];
+            if (!append_argument(&filename, &index_file, &size_file, argv[i], "filename"))
+                goto cleanup_and_exit;
         }
         else if (argv[i][0] == '-') 
         {
@@ -100,10 +100,8 @@ int main(int argc, char *argv[])
                 }
                 else
                 {
-                    if (flag_french)
-                        fprintf(stderr, "ERREUR : L'option '-o' nécessite un nom de fichier cible.\n");
-                    else
-                        fprintf(stderr, "ERROR : Option '-o' requires a target filename.\n");
+                    report_message("ERREUR : L'option '-o' nécessite un nom de fichier cible.\n",
+                                   "ERROR : Option '-o' requires a target filename.\n");
                     goto cleanup_and_exit;
                 }
             }
@@ -111,65 +109,24 @@ int main(int argc, char *argv[])
                      strcmp(argv[i], "-keep_c") == 0 || strcmp(argv[i], "-keep_h") == 0 ||
                      strcmp(argv[i], "-without-binary") == 0 || strcmp(argv[i], "-french") == 0)
             {
-                if (index_new_option >= size_new_option - 1)
-                {
-                    size_new_option += 10;
-                    char **tmp = realloc(new_option, sizeof(char *) * size_new_option);
-                    if (tmp == NULL)
-                    {
-                        if (flag_french)
-                            fprintf(stderr, "ERREUR SYSTEME : Échec de réallocation mémoire pour 'new_option'.\n");
-                        else
-                            fprintf(stderr, "SYSTEM ERROR : Memory reallocation failed for 'new_option'.\n");
-                        goto cleanup_and_exit;
-                    }
-                    new_option = tmp;
-                }
-                new_option[index_new_option++] = argv[i];
+                if (!append_argument(&new_option, &index_new_option, &size_new_option, argv[i], "new_option"))
+                    goto cleanup_and_exit;
             }
             else 
             {
-                if (index_option >= size_option - 1)
-                {
-                    size_option += 10;
-                    char **tmp = realloc(options, sizeof(char *) * size_option);  
-                    if (tmp == NULL)
-                    {
-                        if (flag_french)
-                            fprintf(stderr, "ERREUR SYSTEME : Échec de réallocation mémoire pour 'options'.\n");
-                        else
-                            fprintf(stderr, "SYSTEM ERROR : Memory reallocation failed for 'options'.\n");
-                        goto cleanup_and_exit;
-                    }
-                    options = tmp;
-                }
-                options[index_option++] = argv[i];
+                if (!append_argument(&options, &index_option, &size_option, argv[i], "options"))
+                    goto cleanup_and_exit;
             }
         }
         else if (len >= 2 && (strcmp(argv[i] + len - 2, ".c") == 0 || strcmp(argv[i] + len - 2, ".h") == 0))
         {
-            if (index_option >= size_option - 1)
-            {
-                size_option += 10;
-                char **tmp = realloc(options, sizeof(char *) * size_option);  
-                if (tmp == NULL)
-                {
-                    if (flag_french)
-                        fprintf(stderr, "ERREUR SYSTEME : Échec de réallocation mémoire pour 'options'.\n");
-                    else
-                        fprintf(stderr, "SYSTEM ERROR : Memory reallocation failed for 'options'.\n");
-                    goto cleanup_and_exit;
-                }
-                options = tmp;
-            }
-            options[index_option++] = argv[i];
+            if (!append_argument(&options, &index_option, &size_option, argv[i], "options"))
+                goto cleanup_and_exit;
         }
         else 
         {
-            if (flag_french)
-                fprintf(stderr, "ERREUR : L'argument '%s' n'est pas reconnu.\n", argv[i]);
-            else
-                fprintf(stderr, "ERROR : Unrecognized argument '%s'.\n", argv[i]);
+            report_message("ERREUR : L'argument '%s' n'est pas reconnu.\n",
+                           "ERROR : Unrecognized argument '%s'.\n", argv[i]);
             goto cleanup_and_exit;
         }
     }
@@ -180,27 +137,18 @@ int main(int argc, char *argv[])
 
     if (index_file == 0)
     {
-        if (flag_french)
-            fprintf(stderr, "ERREUR : Aucun fichier source (extension .l ou .H) n'a été fourni.\n");
-        else
-            fprintf(stderr, "ERROR : No source file (.l or .H extension) was provided.\n");
+        report_message("ERREUR : Aucun fichier source (extension .l ou .H) n'a été fourni.\n",
+                       "ERROR : No source file (.l or .H extension) was provided.\n");
         goto cleanup_and_exit;
     }
 
-    char **created_filenames = malloc(sizeof(char *) * (index_file + 1));
+    char **created_filenames = calloc(index_file + 1, sizeof(char *));
     if (created_filenames == NULL)
     {
-        if (flag_french)
-            fprintf(stderr, "ERREUR SYSTEME : Échec d'allocation mémoire pour 'created_filenames'.\n");
-        else
-            fprintf(stderr, "SYSTEM ERROR : Memory allocation failed for 'created_filenames'.\n");
+        report_message("ERREUR SYSTEME : Échec d'allocation mémoire pour 'created_filenames'.\n",
+                       "SYSTEM ERROR : Memory allocation failed for 'created_filenames'.\n");
         goto cleanup_and_exit;
     }
-    for (int k = 0; k <= index_file; k++) 
-    {
-        created_filenames[k] = NULL;
-    }
-
     int status = 0;
     int created_count = 0;
 
@@ -209,10 +157,8 @@ int main(int argc, char *argv[])
         FILE *file = fopen(filename[i], "r");
         if (file == NULL)
         {
-            if (flag_french)
-                fprintf(stderr, "ERREUR FICHIER : Impossible d'ouvrir le fichier '%s'.\n", filename[i]);
-            else
-                fprintf(stderr, "FILE ERROR : Cannot open file '%s'.\n", filename[i]);
+            report_message("ERREUR FICHIER : Impossible d'ouvrir le fichier '%s'.\n",
+                           "FILE ERROR : Cannot open file '%s'.\n", filename[i]);
             status = 1;
             break;
         }
@@ -223,10 +169,8 @@ int main(int argc, char *argv[])
 
         if (status != 0)
         {
-            if (flag_french)
-                fprintf(stderr, "ERREUR : Échec de l'analyse syntaxique (parsing) du fichier '%s'.\n", filename[i]);
-            else
-                fprintf(stderr, "ERROR : Parsing failed for file '%s'.\n", filename[i]);
+            report_message("ERREUR : Échec de l'analyse syntaxique (parsing) du fichier '%s'.\n",
+                           "ERROR : Parsing failed for file '%s'.\n", filename[i]);
             break;
         }
 
@@ -251,20 +195,16 @@ int main(int argc, char *argv[])
 
             if (status != 0)
             {
-                if (flag_french)
-                    fprintf(stderr, "ERREUR : Échec lors de la traduction du fichier '%s'.\n", filename[i]);
-                else
-                    fprintf(stderr, "ERROR : Translation failed for file '%s'.\n", filename[i]);
+                report_message("ERREUR : Échec lors de la traduction du fichier '%s'.\n",
+                               "ERROR : Translation failed for file '%s'.\n", filename[i]);
                 break;
             }
 
-            char *gen_name = strdup(filename[i]);
+            char *gen_name = duplicate_string(filename[i]);
             if (gen_name == NULL)
             {
-                if (flag_french)
-                    fprintf(stderr, "ERREUR SYSTEME : Échec d'allocation mémoire.\n");
-                else
-                    fprintf(stderr, "SYSTEM ERROR : Memory allocation failed.\n");
+                report_message("ERREUR SYSTEME : Échec d'allocation mémoire.\n",
+                               "SYSTEM ERROR : Memory allocation failed.\n");
                 status = 1;
                 break;
             }

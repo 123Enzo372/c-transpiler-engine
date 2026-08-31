@@ -15,10 +15,15 @@ typedef struct {
     int scope_level;
 } Symbol;
 
+typedef struct {
+    char name[64];
+    int scope_level;
+} AllocatedPtr;
+
 static Symbol symbol_table[MAX_SYMBOLS];
 static int symbol_count = 0;
 
-static char allocated_ptrs[MAX_ALLOCATED][64];
+static AllocatedPtr allocated_ptrs[MAX_ALLOCATED];
 static int allocated_count = 0;
 
 static char current_match_var[64] = {0};
@@ -41,6 +46,33 @@ static void trim_leading_whitespace(char *str)
     if (p != str) memmove(str, p, strlen(p) + 1);
 }
 
+static bool append_checked(char *dest, size_t dest_size, const char *src)
+{
+    size_t dest_len;
+    size_t src_len;
+
+    if (dest == NULL || src == NULL || dest_size == 0)
+        return false;
+
+    dest_len = strlen(dest);
+    src_len = strlen(src);
+    if (src_len >= dest_size - dest_len)
+        return false;
+
+    memcpy(dest + dest_len, src, src_len + 1);
+    return true;
+}
+
+static bool copy_slice(char *dest, size_t dest_size, const char *start, size_t len)
+{
+    if (dest == NULL || start == NULL || dest_size == 0 || len >= dest_size)
+        return false;
+
+    memcpy(dest, start, len);
+    dest[len] = '\0';
+    return true;
+}
+
 static bool is_valid_identifier(const char *str)
 {
     if (!str || !*str) return false;
@@ -54,24 +86,31 @@ static bool is_valid_identifier(const char *str)
 
 static bool add_symbol(const char *name, const char *type, int scope_level, int line_num)
 {
+    if (strlen(name) >= sizeof(symbol_table[0].name) || strlen(type) >= sizeof(symbol_table[0].type))
+    {
+        report_message("ERREUR [Ligne %d] : Nom de symbole ou type trop long ('%s', '%s').\n",
+                       "ERROR [Line %d] : Symbol name or type is too long ('%s', '%s').\n",
+                       line_num, name, type);
+        return false;
+    }
+
     for (int i = symbol_count - 1; i >= 0; i--)
     {
         if (strcmp(symbol_table[i].name, name) == 0 && symbol_table[i].scope_level == scope_level)
         {
-            strcpy(symbol_table[i].type, type);
+            safe_copy(symbol_table[i].type, sizeof(symbol_table[i].type), type);
             return true;
         }
     }
     if (symbol_count >= MAX_SYMBOLS)
     {
-        if (flag_french)
-            fprintf(stderr, "ERREUR [Ligne %d] : Limite maximale de la table des symboles atteinte (%d).\n", line_num, MAX_SYMBOLS);
-        else
-            fprintf(stderr, "ERROR [Line %d] : Maximum symbol table capacity reached (%d).\n", line_num, MAX_SYMBOLS);
+        report_message("ERREUR [Ligne %d] : Limite maximale de la table des symboles atteinte (%d).\n",
+                       "ERROR [Line %d] : Maximum symbol table capacity reached (%d).\n",
+                       line_num, MAX_SYMBOLS);
         return false;
     }
-    strcpy(symbol_table[symbol_count].name, name);
-    strcpy(symbol_table[symbol_count].type, type);
+    safe_copy(symbol_table[symbol_count].name, sizeof(symbol_table[symbol_count].name), name);
+    safe_copy(symbol_table[symbol_count].type, sizeof(symbol_table[symbol_count].type), type);
     symbol_table[symbol_count].scope_level = scope_level;
     symbol_count++;
     return true;
@@ -102,21 +141,31 @@ static const char *get_symbol_type(const char *name)
     return NULL;
 }
 
-static bool add_allocated_ptr(const char *name, int line_num)
+static bool add_allocated_ptr(const char *name, int scope_level, int line_num)
 {
+    if (strlen(name) >= sizeof(allocated_ptrs[0].name))
+    {
+        report_message("ERREUR [Ligne %d] : Nom de pointeur alloué trop long '%s'.\n",
+                       "ERROR [Line %d] : Allocated pointer name is too long '%s'.\n",
+                       line_num, name);
+        return false;
+    }
+
     for (int i = 0; i < allocated_count; i++)
     {
-        if (strcmp(allocated_ptrs[i], name) == 0) return true;
+        if (strcmp(allocated_ptrs[i].name, name) == 0 && allocated_ptrs[i].scope_level == scope_level)
+            return true;
     }
     if (allocated_count >= MAX_ALLOCATED)
     {
-        if (flag_french)
-            fprintf(stderr, "ERREUR [Ligne %d] : Limite maximale de pointeurs alloués atteinte (%d).\n", line_num, MAX_ALLOCATED);
-        else
-            fprintf(stderr, "ERROR [Line %d] : Maximum allocated pointers limit reached (%d).\n", line_num, MAX_ALLOCATED);
+        report_message("ERREUR [Ligne %d] : Limite maximale de pointeurs alloués atteinte (%d).\n",
+                       "ERROR [Line %d] : Maximum allocated pointers limit reached (%d).\n",
+                       line_num, MAX_ALLOCATED);
         return false;
     }
-    strcpy(allocated_ptrs[allocated_count++], name);
+    safe_copy(allocated_ptrs[allocated_count].name, sizeof(allocated_ptrs[0].name), name);
+    allocated_ptrs[allocated_count].scope_level = scope_level;
+    allocated_count++;
     return true;
 }
 
@@ -125,8 +174,29 @@ static void generate_frees(FILE *file, int indent_level)
     for (int i = 0; i < allocated_count; i++)
     {
         for (int k = 0; k < indent_level; k++) fprintf(file, "    ");
-        fprintf(file, "if (%s != NULL) { free(%s); %s = NULL; }\n", allocated_ptrs[i], allocated_ptrs[i], allocated_ptrs[i]);
+        fprintf(file, "if (%s != NULL) { free(%s); %s = NULL; }\n",
+                allocated_ptrs[i].name, allocated_ptrs[i].name, allocated_ptrs[i].name);
     }
+}
+
+static void generate_scope_frees(FILE *file, int scope_level)
+{
+    int new_count = 0;
+
+    for (int i = 0; i < allocated_count; i++)
+    {
+        if (allocated_ptrs[i].scope_level == scope_level)
+        {
+            for (int k = 0; k < scope_level; k++) fprintf(file, "    ");
+            fprintf(file, "if (%s != NULL) { free(%s); %s = NULL; }\n",
+                    allocated_ptrs[i].name, allocated_ptrs[i].name, allocated_ptrs[i].name);
+        }
+        else
+        {
+            allocated_ptrs[new_count++] = allocated_ptrs[i];
+        }
+    }
+    allocated_count = new_count;
 }
 
 static const char *infer_expression_type(const char *val)
@@ -149,6 +219,7 @@ static const char *infer_expression_type(const char *val)
 
     char val_copy[256];
     strncpy(val_copy, val, sizeof(val_copy) - 1);
+    val_copy[sizeof(val_copy) - 1] = '\0';
     char *token = strtok(val_copy, " +-*/()%");
     while (token != NULL)
     {
@@ -179,9 +250,21 @@ static const char *get_elem_type(const char *list_name)
 
 static const char *get_format_specifier(const char *var_name, int line_num)
 {
+    char list_name[64] = {0};
+    char index_expr[64] = {0};
     const char *type = get_symbol_type(var_name);
     if (type != NULL)
     {
+        if (strcmp(type, "int") == 0) return "%d";
+        if (strcmp(type, "float") == 0) return "%f";
+        if (strcmp(type, "char*") == 0) return "%s";
+        if (strcmp(type, "char") == 0) return "%c";
+        if (strcmp(type, "bool") == 0) return "%d";
+    }
+    if (sscanf(var_name, "%63[^[][%63[^]]]", list_name, index_expr) == 2)
+    {
+        (void)index_expr;
+        type = get_elem_type(list_name);
         if (strcmp(type, "int") == 0) return "%d";
         if (strcmp(type, "float") == 0) return "%f";
         if (strcmp(type, "char*") == 0) return "%s";
@@ -194,10 +277,9 @@ static const char *get_format_specifier(const char *var_name, int line_num)
     }
     if (is_valid_identifier(var_name) && type == NULL)
     {
-        if (flag_french)
-            fprintf(stderr, "AVERTISSEMENT [Ligne %d] : Variable '%s' utilisée sans déclaration explicite prioritaire.\n", line_num, var_name);
-        else
-            fprintf(stderr, "WARNING [Line %d] : Variable '%s' used without prior explicit declaration.\n", line_num, var_name);
+        report_message("AVERTISSEMENT [Ligne %d] : Variable '%s' utilisée sans déclaration explicite prioritaire.\n",
+                       "WARNING [Line %d] : Variable '%s' used without prior explicit declaration.\n",
+                       line_num, var_name);
     }
     return "%s";
 }
@@ -210,6 +292,14 @@ static bool is_c_type(const char *word)
         if (strcmp(word, types[i]) == 0) return true;
     }
     return false;
+}
+
+static bool is_c_declaration_lhs(const char *lhs)
+{
+    char type_name[16] = {0};
+    char variable_name[64] = {0};
+
+    return sscanf(lhs, "%15s %63s", type_name, variable_name) == 2 && is_c_type(type_name);
 }
 
 static int get_indentation_level(const char *line)
@@ -262,10 +352,12 @@ static void normalize_booleans(char *str)
     strcpy(str, buffer);
 }
 
-static bool parse_assignment(const char *line, char *var, char *val)
+static int parse_assignment(const char *line, char *var, size_t var_size, char *val, size_t val_size, int line_num)
 {
     bool in_quotes = false;
     const char *eq = NULL;
+    size_t var_len;
+    size_t val_len;
 
     for (const char *p = line; *p != '\0'; p++)
     {
@@ -280,17 +372,35 @@ static bool parse_assignment(const char *line, char *var, char *val)
         }
     }
 
-    if (!eq) return false;
+    if (!eq) return 0;
 
     if ((eq > line && *(eq - 1) == '!') || *(eq + 1) == '=' || (eq > line && *(eq - 1) == '=') ||
         (eq > line && *(eq - 1) == '<') || (eq > line && *(eq - 1) == '>'))
     {
-        return false;
+        return 0;
     }
 
-    strncpy(var, line, eq - line);
-    var[eq - line] = '\0';
-    strcpy(val, eq + 1);
+    char first_word[16] = {0};
+    if (sscanf(line, "%15s", first_word) == 1 && is_c_type(first_word))
+    {
+        return 0;
+    }
+
+    var_len = (size_t)(eq - line);
+    val_len = strlen(eq + 1);
+    if (var_len >= var_size || val_len >= val_size)
+    {
+        report_message("ERREUR [Ligne %d] : Affectation trop longue.\n",
+                       "ERROR [Line %d] : Assignment is too long.\n", line_num);
+        return -1;
+    }
+
+    if (!copy_slice(var, var_size, line, var_len) || !safe_copy(val, val_size, eq + 1))
+    {
+        report_message("ERREUR [Ligne %d] : Impossible de copier l'affectation.\n",
+                       "ERROR [Line %d] : Could not copy assignment.\n", line_num);
+        return -1;
+    }
 
     trim_trailing_whitespace(var);
     trim_leading_whitespace(var);
@@ -303,7 +413,7 @@ static bool parse_assignment(const char *line, char *var, char *val)
         trim_trailing_whitespace(val);
     }
 
-    return (strlen(var) > 0 && strlen(val) > 0);
+    return (strlen(var) > 0 && strlen(val) > 0) ? 1 : 0;
 }
 
 static const char *parse_and_validate_list_literal(const char *literal, char elements[128][64], int *count_out, int line_num)
@@ -316,15 +426,17 @@ static const char *parse_and_validate_list_literal(const char *literal, char ele
 
     if (!start || !end || end <= start)
     {
-        if (flag_french)
-            fprintf(stderr, "ERREUR [Ligne %d] : Syntaxe de liste invalide '%s'.\n", line_num, literal);
-        else
-            fprintf(stderr, "ERROR [Line %d] : Invalid list syntax '%s'.\n", line_num, literal);
+        report_message("ERREUR [Ligne %d] : Syntaxe de liste invalide '%s'.\n",
+                       "ERROR [Line %d] : Invalid list syntax '%s'.\n", line_num, literal);
         return NULL;
     }
 
-    strncpy(buf, start + 1, end - start - 1);
-    buf[end - start - 1] = '\0';
+    if (!copy_slice(buf, sizeof(buf), start + 1, (size_t)(end - start - 1)))
+    {
+        report_message("ERREUR [Ligne %d] : Liste trop longue.\n",
+                       "ERROR [Line %d] : List literal is too long.\n", line_num);
+        return NULL;
+    }
 
     if (strlen(buf) == 0) return "int";
 
@@ -336,12 +448,31 @@ static const char *parse_and_validate_list_literal(const char *literal, char ele
     {
         while (*token == ' ' || *token == '\t') token++;
         char elem[64] = {0};
-        strcpy(elem, token);
+        if (!safe_copy(elem, sizeof(elem), token))
+        {
+            report_message("ERREUR [Ligne %d] : Élément de liste trop long '%s'.\n",
+                           "ERROR [Line %d] : List element is too long '%s'.\n",
+                           line_num, token);
+            return NULL;
+        }
         trim_trailing_whitespace(elem);
 
         if (strlen(elem) > 0)
         {
-            strcpy(elements[*count_out], elem);
+            if (*count_out >= 128)
+            {
+                report_message("ERREUR [Ligne %d] : Trop d'éléments dans la liste (maximum %d).\n",
+                               "ERROR [Line %d] : Too many elements in list (maximum %d).\n",
+                               line_num, 128);
+                return NULL;
+            }
+            if (!safe_copy(elements[*count_out], 64, elem))
+            {
+                report_message("ERREUR [Ligne %d] : Élément de liste trop long '%s'.\n",
+                               "ERROR [Line %d] : List element is too long '%s'.\n",
+                               line_num, elem);
+                return NULL;
+            }
             (*count_out)++;
 
             const char *elem_type = "int";
@@ -351,14 +482,13 @@ static const char *parse_and_validate_list_literal(const char *literal, char ele
 
             if (detected_type[0] == '\0')
             {
-                strcpy(detected_type, elem_type);
+                safe_copy(detected_type, sizeof(detected_type), elem_type);
             }
             else if (strcmp(detected_type, elem_type) != 0)
             {
-                if (flag_french)
-                    fprintf(stderr, "ERREUR [Ligne %d] : Incohérence de types dans le tableau (%s vs %s).\n", line_num, detected_type, elem_type);
-                else
-                    fprintf(stderr, "ERROR [Line %d] : Type mismatch in array (%s vs %s).\n", line_num, detected_type, elem_type);
+                report_message("ERREUR [Ligne %d] : Incohérence de types dans le tableau (%s vs %s).\n",
+                               "ERROR [Line %d] : Type mismatch in array (%s vs %s).\n",
+                               line_num, detected_type, elem_type);
                 return NULL;
             }
         }
@@ -368,7 +498,7 @@ static const char *parse_and_validate_list_literal(const char *literal, char ele
     return detected_type;
 }
 
-static void transform_print(const char *line, char *out_buf, int line_num)
+static bool transform_print(const char *line, char *out_buf, size_t out_size, int line_num)
 {
     char format_str[1024] = {0};
     char args[512] = {0};
@@ -391,32 +521,85 @@ static void transform_print(const char *line, char *out_buf, int line_num)
 
                 while (p < end_quote && *p != '}')
                 {
+                    if (v_idx >= (int)sizeof(var_name) - 1)
+                    {
+                        report_message("ERREUR [Ligne %d] : Expression interpolée trop longue.\n",
+                                       "ERROR [Line %d] : Interpolated expression is too long.\n",
+                                       line_num);
+                        return false;
+                    }
                     var_name[v_idx++] = *p++;
                 }
 
-                if (*p == '}') p++;
+                if (*p != '}')
+                {
+                    report_message("ERREUR [Ligne %d] : Interpolation print non fermée.\n",
+                                   "ERROR [Line %d] : Unclosed print interpolation.\n",
+                                   line_num);
+                    return false;
+                }
+                if (v_idx == 0)
+                {
+                    report_message("ERREUR [Ligne %d] : Interpolation print vide.\n",
+                                   "ERROR [Line %d] : Empty print interpolation.\n",
+                                   line_num);
+                    return false;
+                }
+                p++;
 
                 const char *specifier = get_format_specifier(var_name, line_num);
-                strcat(f_out, specifier);
-                f_out += strlen(specifier);
+                if (!append_checked(format_str, sizeof(format_str), specifier))
+                {
+                    report_message("ERREUR [Ligne %d] : Format print trop long.\n",
+                                   "ERROR [Line %d] : Print format is too long.\n", line_num);
+                    return false;
+                }
+                f_out = format_str + strlen(format_str);
 
-                if (strlen(args) > 0) strcat(args, ", ");
-                strcat(args, var_name);
+                if (strlen(args) > 0 && !append_checked(args, sizeof(args), ", "))
+                {
+                    report_message("ERREUR [Ligne %d] : Liste d'arguments print trop longue.\n",
+                                   "ERROR [Line %d] : Print argument list is too long.\n", line_num);
+                    return false;
+                }
+                if (!append_checked(args, sizeof(args), var_name))
+                {
+                    report_message("ERREUR [Ligne %d] : Liste d'arguments print trop longue.\n",
+                                   "ERROR [Line %d] : Print argument list is too long.\n", line_num);
+                    return false;
+                }
             }
             else
             {
+                if ((size_t)(f_out - format_str) >= sizeof(format_str) - 1)
+                {
+                    report_message("ERREUR [Ligne %d] : Format print trop long.\n",
+                                   "ERROR [Line %d] : Print format is too long.\n", line_num);
+                    return false;
+                }
                 *f_out++ = *p++;
+                *f_out = '\0';
             }
         }
         *f_out = '\0';
 
         if (strlen(args) > 0)
         {
-            sprintf(out_buf, "printf(\"%s\\n\", %s);", format_str, args);
+            if (snprintf(out_buf, out_size, "printf(\"%s\\n\", %s);", format_str, args) >= (int)out_size)
+            {
+                report_message("ERREUR [Ligne %d] : Instruction print générée trop longue.\n",
+                               "ERROR [Line %d] : Generated print statement is too long.\n", line_num);
+                return false;
+            }
         }
         else
         {
-            sprintf(out_buf, "printf(\"%s\\n\");", format_str);
+            if (snprintf(out_buf, out_size, "printf(\"%s\\n\");", format_str) >= (int)out_size)
+            {
+                report_message("ERREUR [Ligne %d] : Instruction print générée trop longue.\n",
+                               "ERROR [Line %d] : Generated print statement is too long.\n", line_num);
+                return false;
+            }
         }
     }
     else
@@ -426,26 +609,43 @@ static void transform_print(const char *line, char *out_buf, int line_num)
         if (arg_start && arg_end && arg_end > arg_start)
         {
             char expr[256] = {0};
-            strncpy(expr, arg_start + 1, arg_end - arg_start - 1);
+            if (!copy_slice(expr, sizeof(expr), arg_start + 1, (size_t)(arg_end - arg_start - 1)))
+            {
+                report_message("ERREUR [Ligne %d] : Expression print trop longue.\n",
+                               "ERROR [Line %d] : Print expression is too long.\n", line_num);
+                return false;
+            }
             trim_trailing_whitespace(expr);
             const char *spec = get_format_specifier(expr, line_num);
-            sprintf(out_buf, "printf(\"%s\\n\", %s);", spec, expr);
+            if (snprintf(out_buf, out_size, "printf(\"%s\\n\", %s);", spec, expr) >= (int)out_size)
+            {
+                report_message("ERREUR [Ligne %d] : Instruction print générée trop longue.\n",
+                               "ERROR [Line %d] : Generated print statement is too long.\n", line_num);
+                return false;
+            }
         }
         else
         {
-            sprintf(out_buf, "printf(%s);", line + 6);
+            if (snprintf(out_buf, out_size, "printf(%s);", line + 6) >= (int)out_size)
+            {
+                report_message("ERREUR [Ligne %d] : Instruction print générée trop longue.\n",
+                               "ERROR [Line %d] : Generated print statement is too long.\n", line_num);
+                return false;
+            }
         }
     }
+    return true;
 }
 
-static void write_action(FILE *file, int indent_level, const char *action, int line_num)
+static bool write_action(FILE *file, int indent_level, const char *action, int line_num)
 {
-    if (strlen(action) == 0) return;
+    if (strlen(action) == 0) return true;
     print_indent(file, indent_level);
     if (strncmp(action, "print(", 6) == 0)
     {
         char print_buf[2048] = {0};
-        transform_print(action, print_buf, line_num);
+        if (!transform_print(action, print_buf, sizeof(print_buf), line_num))
+            return false;
         fprintf(file, "%s\n", print_buf);
     }
     else
@@ -460,16 +660,15 @@ static void write_action(FILE *file, int indent_level, const char *action, int l
             fprintf(file, "%s\n", action);
         }
     }
+    return true;
 }
 
 int trad_c(char *filename, char ***text_ptr)
 {
     if (filename == NULL || text_ptr == NULL || *text_ptr == NULL)
     {
-        if (flag_french)
-            fprintf(stderr, "ERREUR CRITIQUE : Paramètres d'entrée invalides transmis à trad_c.\n");
-        else
-            fprintf(stderr, "CRITICAL ERROR : Invalid input parameters provided to trad_c.\n");
+        report_message("ERREUR CRITIQUE : Paramètres d'entrée invalides transmis à trad_c.\n",
+                       "CRITICAL ERROR : Invalid input parameters provided to trad_c.\n");
         return 1;
     }
 
@@ -478,13 +677,11 @@ int trad_c(char *filename, char ***text_ptr)
     in_match_block = false;
     current_match_var[0] = '\0';
 
-    char *new_name = strdup(filename);
+    char *new_name = duplicate_string(filename);
     if (new_name == NULL)
     {
-        if (flag_french)
-            fprintf(stderr, "ERREUR SYSTEME : Échec d'allocation mémoire pour 'new_name'.\n");
-        else
-            fprintf(stderr, "SYSTEM ERROR : Memory allocation failed for 'new_name'.\n");
+        report_message("ERREUR SYSTEME : Échec d'allocation mémoire pour 'new_name'.\n",
+                       "SYSTEM ERROR : Memory allocation failed for 'new_name'.\n");
         return 1;
     }
 
@@ -494,24 +691,20 @@ int trad_c(char *filename, char ***text_ptr)
     char *c_filename = malloc(strlen(new_name) + 3);
     if (c_filename == NULL)
     {
-        if (flag_french)
-            fprintf(stderr, "ERREUR SYSTEME : Échec d'allocation mémoire pour 'c_filename'.\n");
-        else
-            fprintf(stderr, "SYSTEM ERROR : Memory allocation failed for 'c_filename'.\n");
+        report_message("ERREUR SYSTEME : Échec d'allocation mémoire pour 'c_filename'.\n",
+                       "SYSTEM ERROR : Memory allocation failed for 'c_filename'.\n");
         free(new_name);
         return 1;
     }
-    sprintf(c_filename, "%s.c", new_name);
+    snprintf(c_filename, strlen(new_name) + 3, "%s.c", new_name);
     free(new_name);
     new_name = c_filename;
 
     FILE *file = fopen(new_name, "w");
     if (file == NULL)
     {
-        if (flag_french)
-            fprintf(stderr, "ERREUR FICHIER : Impossible de créer le fichier de sortie '%s'.\n", new_name);
-        else
-            fprintf(stderr, "FILE ERROR : Cannot create output file '%s'.\n", new_name);
+        report_message("ERREUR FICHIER : Impossible de créer le fichier de sortie '%s'.\n",
+                       "FILE ERROR : Cannot create output file '%s'.\n", new_name);
         free(new_name);
         return 1;
     }
@@ -524,12 +717,16 @@ int trad_c(char *filename, char ***text_ptr)
     int indent_stack[MAX_INDENT_LEVELS];
     int indent_top = 0;
     indent_stack[0] = 0;
-    bool has_returned = false;
     int line_number = 0;
 
     for (int i = 0; text[i] != NULL; i++)
     {
-        strcat(line_buf, text[i]);
+        if (!append_checked(line_buf, sizeof(line_buf), text[i]))
+        {
+            report_message("ERREUR [Ligne %d] : Ligne source trop longue.\n",
+                           "ERROR [Line %d] : Source line is too long.\n", line_number + 1);
+            goto error_cleanup;
+        }
 
         if (strchr(text[i], '\n') != NULL)
         {
@@ -548,6 +745,7 @@ int trad_c(char *filename, char ***text_ptr)
             {
                 while (indent_top > 0 && current_indent < indent_stack[indent_top])
                 {
+                    generate_scope_frees(file, indent_top);
                     indent_top--;
                     pop_scope(indent_top);
                     print_indent(file, indent_top);
@@ -565,10 +763,9 @@ int trad_c(char *filename, char ***text_ptr)
                     }
                     else
                     {
-                        if (flag_french)
-                            fprintf(stderr, "ERREUR [Ligne %d] : Dépassement du niveau d'indentation maximal (%d).\n", line_number, MAX_INDENT_LEVELS);
-                        else
-                            fprintf(stderr, "ERROR [Line %d] : Maximum indentation level exceeded (%d).\n", line_number, MAX_INDENT_LEVELS);
+                        report_message("ERREUR [Ligne %d] : Dépassement du niveau d'indentation maximal (%d).\n",
+                                       "ERROR [Line %d] : Maximum indentation level exceeded (%d).\n",
+                                       line_number, MAX_INDENT_LEVELS);
                         fclose(file);
                         remove(new_name);
                         free(new_name);
@@ -593,10 +790,9 @@ int trad_c(char *filename, char ***text_ptr)
                     print_indent(file, indent_top);
                     fprintf(file, "{\n");
                     print_indent(file, indent_top + 1);
-                    if (flag_french)
-                        fprintf(file, "perror(\"Erreur : création du tube anonyme échouée\");\n");
-                    else
-                        fprintf(file, "perror(\"Error: anonymous pipe creation failed\");\n");
+                    fprintf(file, "perror(\"%s\");\n",
+                            flag_french ? "Erreur : création du tube anonyme échouée" :
+                                          "Error: anonymous pipe creation failed");
                     print_indent(file, indent_top + 1);
                     fprintf(file, "return -1;\n");
                     print_indent(file, indent_top);
@@ -611,10 +807,9 @@ int trad_c(char *filename, char ***text_ptr)
                     print_indent(file, indent_top);
                     fprintf(file, "{\n");
                     print_indent(file, indent_top + 1);
-                    if (flag_french)
-                        fprintf(file, "perror(\"Erreur : l'initialisation du processus enfant a échoué\");\n");
-                    else
-                        fprintf(file, "perror(\"Error: child process initialization failed\");\n");
+                    fprintf(file, "perror(\"%s\");\n",
+                            flag_french ? "Erreur : l'initialisation du processus enfant a échoué" :
+                                          "Error: child process initialization failed");
                     print_indent(file, indent_top + 1);
                     fprintf(file, "return -1;\n");
                     print_indent(file, indent_top);
@@ -678,10 +873,9 @@ int trad_c(char *filename, char ***text_ptr)
                     {
                         if (sscanf(line, "match %63s with", current_match_var) != 1)
                         {
-                            if (flag_french)
-                                fprintf(stderr, "ERREUR [Ligne %d] : Syntaxe 'match <var> with' incorrecte.\n", line_number);
-                            else
-                                fprintf(stderr, "ERROR [Line %d] : Incorrect 'match <var> with' syntax.\n", line_number);
+                            report_message("ERREUR [Ligne %d] : Syntaxe 'match <var> with' incorrecte.\n",
+                                           "ERROR [Line %d] : Incorrect 'match <var> with' syntax.\n",
+                                           line_number);
                             goto error_cleanup;
                         }
                         in_match_block = true;
@@ -694,10 +888,9 @@ int trad_c(char *filename, char ***text_ptr)
 
                         if (sscanf(line, "| %127[^-]-> %511[^\n]", val_pat, action) != 2)
                         {
-                            if (flag_french)
-                                fprintf(stderr, "ERREUR [Ligne %d] : Branche de 'match' mal formée.\n", line_number);
-                            else
-                                fprintf(stderr, "ERROR [Line %d] : Malformed 'match' branch.\n", line_number);
+                            report_message("ERREUR [Ligne %d] : Branche de 'match' mal formée.\n",
+                                           "ERROR [Line %d] : Malformed 'match' branch.\n",
+                                           line_number);
                             goto error_cleanup;
                         }
                         trim_trailing_whitespace(val_pat);
@@ -733,21 +926,21 @@ int trad_c(char *filename, char ***text_ptr)
                                 fprintf(file, "%s %s = %s;\n", var_type, var_pat, current_match_var);
                                 if (!add_symbol(var_pat, var_type, indent_top + 1, line_number)) goto error_cleanup;
 
-                                write_action(file, indent_top + 1, action, line_number);
+                                if (!write_action(file, indent_top + 1, action, line_number)) goto error_cleanup;
 
                                 print_indent(file, indent_top);
                                 fprintf(file, "}\n");
                             }
                             else
                             {
-                                write_action(file, indent_top + 1, action, line_number);
+                                if (!write_action(file, indent_top + 1, action, line_number)) goto error_cleanup;
                             }
                         }
                         else if (strcmp(val_pat, "[]") == 0)
                         {
                             fprintf(file, "%s (%s_len == 0)\n", match_first_case ? "if" : "else if", current_match_var);
                             match_first_case = false;
-                            write_action(file, indent_top + 1, action, line_number);
+                            if (!write_action(file, indent_top + 1, action, line_number)) goto error_cleanup;
                         }
                         else if (strstr(val_pat, "::") != NULL)
                         {
@@ -769,13 +962,13 @@ int trad_c(char *filename, char ***text_ptr)
                             print_indent(file, indent_top + 1);
                             fprintf(file, "%s* %s = %s + 1;\n", elem_type, tail_var, current_match_var);
                             char list_type[32] = {0};
-                            sprintf(list_type, "%s*", elem_type);
+                            snprintf(list_type, sizeof(list_type), "%s*", elem_type);
                             if (!add_symbol(tail_var, list_type, indent_top + 1, line_number)) goto error_cleanup;
 
                             print_indent(file, indent_top + 1);
                             fprintf(file, "%s_len--;\n", current_match_var);
 
-                            write_action(file, indent_top + 1, action, line_number);
+                            if (!write_action(file, indent_top + 1, action, line_number)) goto error_cleanup;
                             
                             print_indent(file, indent_top);
                             fprintf(file, "}\n");
@@ -796,7 +989,7 @@ int trad_c(char *filename, char ***text_ptr)
                             fprintf(file, "%s %s = %s[0];\n", elem_type, elem_var, current_match_var);
                             if (!add_symbol(elem_var, elem_type, indent_top + 1, line_number)) goto error_cleanup;
 
-                            write_action(file, indent_top + 1, action, line_number);
+                            if (!write_action(file, indent_top + 1, action, line_number)) goto error_cleanup;
 
                             print_indent(file, indent_top);
                             fprintf(file, "}\n");
@@ -804,13 +997,13 @@ int trad_c(char *filename, char ***text_ptr)
                         else if (strcmp(val_pat, "_") == 0)
                         {
                             fprintf(file, "else\n");
-                            write_action(file, indent_top + 1, action, line_number);
+                            if (!write_action(file, indent_top + 1, action, line_number)) goto error_cleanup;
                         }
                         else
                         {
                             fprintf(file, "%s (%s == %s)\n", match_first_case ? "if" : "else if", current_match_var, val_pat);
                             match_first_case = false;
-                            write_action(file, indent_top + 1, action, line_number);
+                            if (!write_action(file, indent_top + 1, action, line_number)) goto error_cleanup;
                         }
                     }
                     else if (strstr(line, "::") != NULL)
@@ -836,7 +1029,7 @@ int trad_c(char *filename, char ***text_ptr)
                             print_indent(file, indent_top);
                             fprintf(file, "%s* %s = %s + 1;\n", elem_type, tail_var, source_list);
                             char list_type[32] = {0};
-                            sprintf(list_type, "%s*", elem_type);
+                            snprintf(list_type, sizeof(list_type), "%s*", elem_type);
                             if (!add_symbol(tail_var, list_type, indent_top, line_number)) goto error_cleanup;
 
                             print_indent(file, indent_top);
@@ -844,10 +1037,9 @@ int trad_c(char *filename, char ***text_ptr)
                         }
                         else
                         {
-                            if (flag_french)
-                                fprintf(stderr, "ERREUR [Ligne %d] : Décomposition de liste '::' mal formée.\n", line_number);
-                            else
-                                fprintf(stderr, "ERROR [Line %d] : Malformed list decomposition '::'.\n", line_number);
+                            report_message("ERREUR [Ligne %d] : Décomposition de liste '::' mal formée.\n",
+                                           "ERROR [Line %d] : Malformed list decomposition '::'.\n",
+                                           line_number);
                             goto error_cleanup;
                         }
                     }
@@ -856,15 +1048,20 @@ int trad_c(char *filename, char ***text_ptr)
                         if (line[0] != '|') in_match_block = false;
 
                         char var[64] = {0}, val[256] = {0};
+                        int assignment_status = parse_assignment(line, var, sizeof(var), val, sizeof(val), line_number);
 
-                        if (parse_assignment(line, var, val) && !is_c_type(var))
+                        if (assignment_status < 0)
+                        {
+                            goto error_cleanup;
+                        }
+
+                        if (assignment_status && !is_c_declaration_lhs(var))
                         {
                             if (!is_valid_identifier(var))
                             {
-                                if (flag_french)
-                                    fprintf(stderr, "ERREUR [Ligne %d] : Identifiant de variable invalide '%s'.\n", line_number, var);
-                                else
-                                    fprintf(stderr, "ERROR [Line %d] : Invalid variable identifier '%s'.\n", line_number, var);
+                                report_message("ERREUR [Ligne %d] : Identifiant de variable invalide '%s'.\n",
+                                               "ERROR [Line %d] : Invalid variable identifier '%s'.\n",
+                                               line_number, var);
                                 goto error_cleanup;
                             }
 
@@ -888,11 +1085,11 @@ int trad_c(char *filename, char ***text_ptr)
                                     if (elem_type == NULL) goto error_cleanup;
 
                                     char list_type[32] = {0};
-                                    sprintf(list_type, "%s*", elem_type);
+                                    snprintf(list_type, sizeof(list_type), "%s*", elem_type);
 
                                     fprintf(file, "%s *%s = malloc(%d * sizeof(%s));\n", elem_type, var, count, elem_type);
                                     if (!add_symbol(var, list_type, indent_top, line_number)) goto error_cleanup;
-                                    if (!add_allocated_ptr(var, line_number)) goto error_cleanup;
+                                    if (!add_allocated_ptr(var, indent_top, line_number)) goto error_cleanup;
 
                                     for (int k = 0; k < count; k++)
                                     {
@@ -920,19 +1117,24 @@ int trad_c(char *filename, char ***text_ptr)
                             generate_frees(file, indent_top);
                             print_indent(file, indent_top);
                             fprintf(file, "%s;\n", line);
-                            has_returned = true;
                         }
                         else if (strncmp(line, "print(", 6) == 0)
                         {
                             char print_formatted[2048] = {0};
-                            transform_print(line, print_formatted, line_number);
+                            if (!transform_print(line, print_formatted, sizeof(print_formatted), line_number)) goto error_cleanup;
                             print_indent(file, indent_top);
                             fprintf(file, "%s\n", print_formatted);
                         }
                         else if (strncmp(line, "if ", 3) == 0)
                         {
                             char cond[1024] = {0};
-                            strcpy(cond, line + 3);
+                            if (!safe_copy(cond, sizeof(cond), line + 3))
+                            {
+                                report_message("ERREUR [Ligne %d] : Condition if trop longue.\n",
+                                               "ERROR [Line %d] : if condition is too long.\n",
+                                               line_number);
+                                goto error_cleanup;
+                            }
                             size_t c_len = strlen(cond);
                             if (c_len > 0 && cond[c_len - 1] == ':') cond[c_len - 1] = '\0';
 
@@ -943,7 +1145,13 @@ int trad_c(char *filename, char ***text_ptr)
                         else if (strncmp(line, "while ", 6) == 0)
                         {
                             char cond[1024] = {0};
-                            strcpy(cond, line + 6);
+                            if (!safe_copy(cond, sizeof(cond), line + 6))
+                            {
+                                report_message("ERREUR [Ligne %d] : Condition while trop longue.\n",
+                                               "ERROR [Line %d] : while condition is too long.\n",
+                                               line_number);
+                                goto error_cleanup;
+                            }
                             size_t c_len = strlen(cond);
                             if (c_len > 0 && cond[c_len - 1] == ':') cond[c_len - 1] = '\0';
 
@@ -958,10 +1166,9 @@ int trad_c(char *filename, char ***text_ptr)
 
                             if (sscanf(line, "for %63s in range(%255[^)])", var_name, range_val) != 2)
                             {
-                                if (flag_french)
-                                    fprintf(stderr, "ERREUR [Ligne %d] : Syntaxe de boucle 'for ... in range()' invalide.\n", line_number);
-                                else
-                                    fprintf(stderr, "ERROR [Line %d] : Invalid 'for ... in range()' loop syntax.\n", line_number);
+                                report_message("ERREUR [Ligne %d] : Syntaxe de boucle 'for ... in range()' invalide.\n",
+                                               "ERROR [Line %d] : Invalid 'for ... in range()' loop syntax.\n",
+                                               line_number);
                                 goto error_cleanup;
                             }
                             if (!add_symbol(var_name, "int", indent_top, line_number)) goto error_cleanup;
@@ -976,14 +1183,33 @@ int trad_c(char *filename, char ***text_ptr)
                         else
                         {
                             char type_exp[16] = {0}, var_exp[64] = {0};
-                            if (sscanf(line, "%15s %63s", type_exp, var_exp) == 2 && is_c_type(type_exp))
+                            if (sscanf(line, "%15s %63[^ (](%*[^)])", type_exp, var_exp) == 2 && is_c_type(type_exp))
                             {
                                 if (!add_symbol(var_exp, type_exp, indent_top, line_number)) goto error_cleanup;
+                            }
+                            else if (sscanf(line, "%15s %63s", type_exp, var_exp) == 2 && is_c_type(type_exp))
+                            {
+                                bool pointer_decl = false;
+                                while (var_exp[0] == '*')
+                                {
+                                    pointer_decl = true;
+                                    memmove(var_exp, var_exp + 1, strlen(var_exp));
+                                }
+                                char *suffix = strpbrk(var_exp, "=;[(");
+                                if (suffix != NULL) *suffix = '\0';
+                                char symbol_type[16] = {0};
+                                if (pointer_decl)
+                                    snprintf(symbol_type, sizeof(symbol_type), "%s*", type_exp);
+                                else
+                                    safe_copy(symbol_type, sizeof(symbol_type), type_exp);
+                                if (is_valid_identifier(var_exp) && !add_symbol(var_exp, symbol_type, indent_top, line_number)) goto error_cleanup;
                             }
 
                             print_indent(file, indent_top);
                             size_t l_len = strlen(line);
-                            if (l_len > 0 && line[l_len - 1] != ';' && line[l_len - 1] != ')' && line[l_len - 1] != '{' && line[l_len - 1] != '}')
+                            bool function_header = is_c_type(type_exp) && strchr(line, '(') != NULL &&
+                                                   l_len > 0 && line[l_len - 1] == ')';
+                            if (l_len > 0 && line[l_len - 1] != ';' && !function_header && line[l_len - 1] != '{' && line[l_len - 1] != '}')
                             {
                                 fprintf(file, "%s;\n", line);
                             }
@@ -1000,13 +1226,9 @@ int trad_c(char *filename, char ***text_ptr)
         }
     }
 
-    if (!has_returned)
-    {
-        generate_frees(file, indent_top);
-    }
-
     while (indent_top > 0)
     {
+        generate_scope_frees(file, indent_top);
         indent_top--;
         pop_scope(indent_top);
         print_indent(file, indent_top);

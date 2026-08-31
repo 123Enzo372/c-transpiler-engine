@@ -111,6 +111,8 @@ The parser is intentionally simple. Whitespace matters.
 - A block ends when indentation decreases.
 - Keep spaces around keywords such as `if`, `while`, `for`, and `match`.
 - Raw C lines are allowed, but complex C should keep normal C syntax.
+- A final newline is recommended, but the last source line is still processed if
+  the file does not end with one.
 
 ## `.l` Language Guide
 
@@ -191,11 +193,14 @@ for (int i = 0; i < 5; i++)
 ```text
 name = "Ada"
 age = 36
+numbers = [10, 20, 30]
 print("name={name}, age={age}")
 print(age)
+print("first number={numbers[0]}")
 ```
 
 String interpolation uses `{variable}` inside double-quoted strings.
+Interpolations must be closed and cannot be empty.
 
 ### Lists
 
@@ -217,6 +222,8 @@ flags = [true, false, true]
 ```
 
 Lists must be homogeneous. Mixed lists such as `[1, 2.5, "text"]` are rejected.
+Generated arrays are freed automatically before `return` and when their block
+scope closes.
 
 ### List Decomposition
 
@@ -270,6 +277,15 @@ Match branch actions must fit on one line.
 | `#parent basic` | Emits `else`, waits for the child with `waitpid`, and checks its exit status. |
 
 Unknown `#` lines in `.l` files become C comments.
+
+## Diagnostics And Safety Checks
+
+Diagnostics follow the same language-selection logic across the codebase:
+English by default, French when `-french` is present.
+
+The transpiler now reports clear errors for oversized source lines, oversized
+assignments, oversized list literals, too many list elements, malformed list
+decomposition, malformed `match` branches, and malformed `print` interpolation.
 
 ## `.H` Header Files
 
@@ -365,7 +381,8 @@ This project is a lightweight transpiler, not a full C compiler.
 - Lists are C arrays allocated with `malloc`.
 - Mixed-type lists are rejected.
 - Process and pipe helpers depend on POSIX APIs.
-- For complex C, write the C line explicitly.
+- For complex C, write the C line explicitly; typed C declarations and common
+  C calls can be mixed with `.l` syntax.
 
 To understand what the language produces, read `example_syntax` and run examples
 with `-without-binary -keep_c`.

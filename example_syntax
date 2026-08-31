@@ -15,6 +15,7 @@ General advice:
 - A block starts when the next line is more indented.
 - A block ends when indentation decreases.
 - Use -without-binary -keep_c to inspect the generated C.
+- A final newline is recommended, but the last line is still processed without it.
 
 
 1. Minimal .l program
@@ -167,14 +168,17 @@ int main()
     name = "Ada"
     age = 36
     total = 7 + 5
+    numbers = [10, 20, 30]
 
     print("name={name}")
     print("age={age}, total={total}")
     print(age)
+    print("first number={numbers[0]}")
 
     return 0
 
 Interpolation uses {variable} inside a double-quoted string.
+Interpolations must be closed and cannot be empty.
 
 
 9. Integer lists
@@ -192,7 +196,7 @@ int main()
 A list creates:
 - a dynamically allocated array named numbers;
 - a length variable named numbers_len;
-- automatic free calls before return.
+- automatic free calls before return and when the current block closes.
 
 
 10. Lists of other types
@@ -389,13 +393,16 @@ int main()
 int main()
     counter = 3
     printf("raw printf call with normal C syntax\n");
+    int explicit_value = 42
 
     if counter > 0:
         print("counter is positive")
+        puts("raw C call can be used inside a block")
 
     return 0
 
-Tip: for complex raw C, keep complete C syntax.
+Tip: typed C declarations and common raw C calls can be mixed with .l syntax.
+For complex raw C, keep complete C syntax.
 
 
 20. Passing gcc options
@@ -495,4 +502,17 @@ Malformed match:
 int main()
     match with
         | 1 -> print("bad")
+    return 0
+
+Malformed print interpolation:
+
+int main()
+    value = 10
+    print("value={value")
+    return 0
+
+Empty print interpolation:
+
+int main()
+    print("value={}")
     return 0
