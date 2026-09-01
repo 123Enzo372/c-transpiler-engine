@@ -19,6 +19,12 @@ suite_tests
 local_tests/
 local_tests*/
 
+# Local test fixtures kept outside the repository
+run_tests.c
+test.H
+test_erreurs_*.l
+test_succes.*
+
 # Editor and OS noise
 .DS_Store
 Thumbs.db
