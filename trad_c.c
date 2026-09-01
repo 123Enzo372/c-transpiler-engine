@@ -1142,6 +1142,23 @@ int trad_c(char *filename, char ***text_ptr)
                             print_indent(file, indent_top);
                             fprintf(file, "if (%s)\n", cond);
                         }
+                        else if (strncmp(line, "elif ", 5) == 0)
+                        {
+                            char cond[1024] = {0};
+                            if (!safe_copy(cond, sizeof(cond), line + 5))
+                            {
+                                report_message("ERREUR [Ligne %d] : Condition elif trop longue.\n",
+                                               "ERROR [Line %d] : elif condition is too long.\n",
+                                               line_number);
+                                goto error_cleanup;
+                            }
+                            size_t c_len = strlen(cond);
+                            if (c_len > 0 && cond[c_len - 1] == ':') cond[c_len - 1] = '\0';
+
+                            trim_trailing_whitespace(cond);
+                            print_indent(file, indent_top);
+                            fprintf(file, "else if (%s)\n", cond);
+                        }
                         else if (strncmp(line, "while ", 6) == 0)
                         {
                             char cond[1024] = {0};

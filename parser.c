@@ -1,11 +1,62 @@
 #include "main.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
+
+static void free_lines(char **lines)
+{
+    if (lines == NULL)
+        return;
+
+    for (int i = 0; lines[i] != NULL; i++)
+    {
+        free(lines[i]);
+    }
+    free(lines);
+}
+
+static int append_line(char ***lines, int *count, int *capacity, const char *buffer, size_t len)
+{
+    char *line;
+
+    if (*count >= *capacity - 1)
+    {
+        int old_capacity = *capacity;
+        int new_capacity = *capacity + 64;
+        char **tmp = realloc(*lines, sizeof(char *) * new_capacity);
+        if (tmp == NULL)
+        {
+            report_message("ERREUR SYSTEME : Échec de réallocation mémoire pour le tableau de lignes.\n",
+                           "SYSTEM ERROR : Memory reallocation failed for line list.\n");
+            return 0;
+        }
+        *lines = tmp;
+        for (int i = old_capacity; i < new_capacity; i++)
+        {
+            (*lines)[i] = NULL;
+        }
+        *capacity = new_capacity;
+    }
+
+    line = malloc(len + 1);
+    if (line == NULL)
+    {
+        report_message("ERREUR SYSTEME : Échec d'allocation mémoire pour une ligne source.\n",
+                       "SYSTEM ERROR : Memory allocation failed for source line.\n");
+        return 0;
+    }
+
+    memcpy(line, buffer, len);
+    line[len] = '\0';
+    (*lines)[(*count)++] = line;
+    (*lines)[*count] = NULL;
+    return 1;
+}
 
 int parser(FILE *file, char ***text_ptr)
 {
-    if (file == NULL || text_ptr == NULL) 
+    if (file == NULL || text_ptr == NULL)
     {
         report_message("ERREUR : Paramètres invalides fournis au parser.\n",
                        "ERROR : Invalid parameters provided to parser.\n");
@@ -13,170 +64,85 @@ int parser(FILE *file, char ***text_ptr)
     }
     *text_ptr = NULL;
 
-    int size_c = 100;
-    int size_s = 100;
-
-    char **text = calloc(size_s, sizeof(char *));
-    if (text == NULL)
+    int line_capacity = 64;
+    int line_count = 0;
+    char **lines = calloc(line_capacity, sizeof(char *));
+    if (lines == NULL)
     {
-        report_message("ERREUR SYSTEME : Échec d'allocation mémoire pour 'text'.\n",
-                       "SYSTEM ERROR : Memory allocation failed for 'text'.\n");
-        return 1;
-    }
-    
-    text[0] = malloc(sizeof(char) * size_c);
-    if (text[0] == NULL)
-    {
-        report_message("ERREUR SYSTEME : Échec d'allocation mémoire pour le premier élément de 'text'.\n",
-                       "SYSTEM ERROR : Memory allocation failed for first item of 'text'.\n");
-        free(text);
+        report_message("ERREUR SYSTEME : Échec d'allocation mémoire pour le tableau de lignes.\n",
+                       "SYSTEM ERROR : Memory allocation failed for line list.\n");
         return 1;
     }
 
-    int index_s = 0;
-    int index_c = 0;
+    size_t buffer_capacity = 256;
+    size_t buffer_len = 0;
+    char *buffer = malloc(buffer_capacity);
+    if (buffer == NULL)
+    {
+        report_message("ERREUR SYSTEME : Échec d'allocation mémoire pour le tampon de ligne.\n",
+                       "SYSTEM ERROR : Memory allocation failed for line buffer.\n");
+        free(lines);
+        return 1;
+    }
+
     int c;
-    int last_c = 0;
-
     while ((c = fgetc(file)) != EOF)
     {
-        last_c = c;
-        if (c != ' ' && c != '\n' && c != '\t')
+        if (buffer_len >= buffer_capacity - 2)
         {
-            if (index_c >= size_c - 1)
-            {
-                size_c += 100;
-                char *tmp = realloc(text[index_s], sizeof(char) * size_c); 
-                if (tmp == NULL)
-                {
-                    report_message("ERREUR SYSTEME : Échec de réallocation mémoire pour un mot.\n",
-                                   "SYSTEM ERROR : Memory reallocation failed for word.\n");
-                    goto error_cleanup;
-                }
-                text[index_s] = tmp;
-            }
-            text[index_s][index_c++] = (char)c;
-        }
-        else
-        {
-            if (index_c > 0)
-            {
-                text[index_s][index_c] = '\0';
-                index_s++;
-
-                if (index_s >= size_s - 2)
-                {
-                    int old_size = size_s;
-                    size_s += 100;
-                    char **tmp = realloc(text, sizeof(char *) * size_s);
-                    if (tmp == NULL)
-                    {
-                        report_message("ERREUR SYSTEME : Échec de réallocation mémoire pour le tableau de mots.\n",
-                                       "SYSTEM ERROR : Memory reallocation failed for word list.\n");
-                        goto error_cleanup;
-                    }
-                    text = tmp;
-                    for (int j = old_size; j < size_s; j++)
-                    {
-                        text[j] = NULL;
-                    }
-                }
-                
-                text[index_s] = malloc(sizeof(char) * 2);
-                if (text[index_s] == NULL)
-                {
-                    report_message("ERREUR SYSTEME : Échec d'allocation mémoire pour un séparateur.\n",
-                                   "SYSTEM ERROR : Memory allocation failed for separator.\n");
-                    goto error_cleanup;
-                }
-            }
-
-            text[index_s][0] = (char)c;
-            text[index_s][1] = '\0';
-
-            index_s++;
-            if (index_s >= size_s - 1)
-            {
-                int old_size = size_s;
-                size_s += 100;
-                char **tmp = realloc(text, sizeof(char *) * size_s);
-                if (tmp == NULL)
-                {
-                    report_message("ERREUR SYSTEME : Échec de réallocation mémoire pour le tableau de mots.\n",
-                                   "SYSTEM ERROR : Memory reallocation failed for word list.\n");
-                    goto error_cleanup;
-                }
-                text = tmp;
-                for (int j = old_size; j < size_s; j++)
-                {
-                    text[j] = NULL;
-                }
-            }
-
-            index_c = 0;
-            size_c = 100;
-            text[index_s] = malloc(sizeof(char) * size_c);
-            if (text[index_s] == NULL)
-            {
-                report_message("ERREUR SYSTEME : Échec d'allocation mémoire pour un nouveau mot.\n",
-                               "SYSTEM ERROR : Memory allocation failed for new word.\n");
-                goto error_cleanup;
-            }
-        }
-    }
-
-    if (index_c > 0)
-    {
-        text[index_s][index_c] = '\0';
-        index_s++;
-    }
-    else 
-    {
-        free(text[index_s]);
-        text[index_s] = NULL;
-    }
-
-    if (last_c != 0 && last_c != '\n')
-    {
-        if (index_s >= size_s - 1)
-        {
-            int old_size = size_s;
-            size_s += 100;
-            char **tmp = realloc(text, sizeof(char *) * size_s);
+            size_t new_capacity = buffer_capacity * 2;
+            char *tmp = realloc(buffer, new_capacity);
             if (tmp == NULL)
             {
-                report_message("ERREUR SYSTEME : Échec de réallocation mémoire pour le tableau de mots.\n",
-                               "SYSTEM ERROR : Memory reallocation failed for word list.\n");
-                goto error_cleanup;
+                report_message("ERREUR SYSTEME : Échec de réallocation mémoire pour le tampon de ligne.\n",
+                               "SYSTEM ERROR : Memory reallocation failed for line buffer.\n");
+                free(buffer);
+                free_lines(lines);
+                return 1;
             }
-            text = tmp;
-            for (int j = old_size; j < size_s; j++)
-            {
-                text[j] = NULL;
-            }
+            buffer = tmp;
+            buffer_capacity = new_capacity;
         }
 
-        text[index_s] = malloc(sizeof(char) * 2);
-        if (text[index_s] == NULL)
+        buffer[buffer_len++] = (char)c;
+        if (c == '\n')
         {
-            report_message("ERREUR SYSTEME : Échec d'allocation mémoire pour un séparateur final.\n",
-                           "SYSTEM ERROR : Memory allocation failed for final separator.\n");
-            goto error_cleanup;
+            if (!append_line(&lines, &line_count, &line_capacity, buffer, buffer_len))
+            {
+                free(buffer);
+                free_lines(lines);
+                return 1;
+            }
+            buffer_len = 0;
         }
-        text[index_s][0] = '\n';
-        text[index_s][1] = '\0';
-        index_s++;
     }
 
-    text[index_s] = NULL;
-    *text_ptr = text;
-    return 0;
-
-error_cleanup:
-    for (int i = 0; i <= index_s; i++)
+    if (buffer_len > 0)
     {
-        free(text[i]);
+        if (buffer_len >= buffer_capacity - 1)
+        {
+            char *tmp = realloc(buffer, buffer_capacity + 2);
+            if (tmp == NULL)
+            {
+                report_message("ERREUR SYSTEME : Échec de réallocation mémoire pour le tampon de ligne.\n",
+                               "SYSTEM ERROR : Memory reallocation failed for line buffer.\n");
+                free(buffer);
+                free_lines(lines);
+                return 1;
+            }
+            buffer = tmp;
+        }
+
+        buffer[buffer_len++] = '\n';
+        if (!append_line(&lines, &line_count, &line_capacity, buffer, buffer_len))
+        {
+            free(buffer);
+            free_lines(lines);
+            return 1;
+        }
     }
-    free(text);
-    return 1;
+
+    free(buffer);
+    *text_ptr = lines;
+    return 0;
 }

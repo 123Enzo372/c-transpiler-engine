@@ -5,6 +5,52 @@
 
 int flag_french = 0;
 
+static void print_help(void)
+{
+    if (flag_french)
+    {
+        printf("Usage : ./compilateur [sources] [options-gcc] [options] [-o sortie]\n\n"
+               "Sources :\n"
+               "  fichier.l              Traduit un fichier source en C.\n"
+               "  fichier.H              Traduit un header avec garde d'inclusion.\n"
+               "  fichier.c / fichier.h  Transmis directement à gcc.\n\n"
+               "Options :\n"
+               "  -o <nom>          Nom du binaire final.\n"
+               "  -without-binary   Traduit sans lancer gcc.\n"
+               "  -keep_c           Conserve les fichiers .c générés.\n"
+               "  -keep_h           Conserve les fichiers .h générés.\n"
+               "  -rm_l             Supprime les sources .l après succès.\n"
+               "  -rm_H             Supprime les sources .H après succès.\n"
+               "  -french           Affiche les diagnostics en français.\n"
+               "  -h, --help        Affiche cette aide.\n\n"
+               "Exemples :\n"
+               "  ./compilateur main.l -o app\n"
+               "  ./compilateur main.l api.H -Wall -Wextra -o app\n"
+               "  ./compilateur main.l -without-binary -keep_c\n");
+    }
+    else
+    {
+        printf("Usage: ./compilateur [sources] [gcc-options] [options] [-o output]\n\n"
+               "Sources:\n"
+               "  file.l              Translate a source file to C.\n"
+               "  file.H              Translate a header with an include guard.\n"
+               "  file.c / file.h     Passed directly to gcc.\n\n"
+               "Options:\n"
+               "  -o <name>         Final executable name.\n"
+               "  -without-binary   Translate without running gcc.\n"
+               "  -keep_c           Keep generated .c files.\n"
+               "  -keep_h           Keep generated .h files.\n"
+               "  -rm_l             Delete .l sources after success.\n"
+               "  -rm_H             Delete .H sources after success.\n"
+               "  -french           Print diagnostics in French.\n"
+               "  -h, --help        Show this help message.\n\n"
+               "Examples:\n"
+               "  ./compilateur main.l -o app\n"
+               "  ./compilateur main.l api.H -Wall -Wextra -o app\n"
+               "  ./compilateur main.l -without-binary -keep_c\n");
+    }
+}
+
 static int append_argument(char ***items, int *count, int *capacity, char *value, const char *name)
 {
     if (*count >= *capacity - 1)
@@ -35,6 +81,15 @@ int main(int argc, char *argv[])
         {
             flag_french = 1;
             break;
+        }
+    }
+
+    for (int i = 1; i < argc; i++)
+    {
+        if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0)
+        {
+            print_help();
+            return 0;
         }
     }
 

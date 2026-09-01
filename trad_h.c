@@ -5,6 +5,17 @@
 #include <ctype.h>
 
 
+static void trim_trailing_whitespace(char *str)
+{
+    size_t len = strlen(str);
+
+    while (len > 0 && (str[len - 1] == ' ' || str[len - 1] == '\t' ||
+                       str[len - 1] == '\r' || str[len - 1] == '\n'))
+    {
+        str[--len] = '\0';
+    }
+}
+
 int trad_h(char *filename, char ***text_ptr)
 {
     if (filename == NULL || text_ptr == NULL || *text_ptr == NULL)
@@ -89,7 +100,13 @@ int trad_h(char *filename, char ***text_ptr)
     char **text = *text_ptr;
     for (int i = 0; text[i] != NULL; i++)
     {
-        if (strcmp(text[i], "#all") == 0)
+        char directive[256] = {0};
+        if (safe_copy(directive, sizeof(directive), text[i]))
+        {
+            trim_trailing_whitespace(directive);
+        }
+
+        if (strcmp(directive, "#all") == 0)
         {
             fprintf(file, "#include <stdio.h>\n"
                           "#include <stdlib.h>\n"
@@ -98,18 +115,18 @@ int trad_h(char *filename, char ***text_ptr)
                           "#include <math.h>\n"
                           "#include <time.h>\n");
         }
-        else if (strcmp(text[i], "#linux") == 0)
+        else if (strcmp(directive, "#linux") == 0)
         {
             fprintf(file, "#include <unistd.h>\n"
                           "#include <sys/types.h>\n"
                           "#include <sys/wait.h>\n"
                           "#include <fcntl.h>\n");
         }
-        else if (strcmp(text[i], "#windows") == 0)
+        else if (strcmp(directive, "#windows") == 0)
         {
             fprintf(file, "#include <windows.h>\n");
         }
-        else if (strcmp(text[i], "#mac") == 0)
+        else if (strcmp(directive, "#mac") == 0)
         {
             fprintf(file, "#include <TargetConditionals.h>\n"
                           "#include <Availability.h>\n");

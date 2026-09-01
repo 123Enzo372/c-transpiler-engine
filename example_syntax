@@ -14,6 +14,7 @@ General advice:
 - Do not write C braces for .l blocks.
 - A block starts when the next line is more indented.
 - A block ends when indentation decreases.
+- Spaces inside strings are preserved by the line-based parser.
 - Use -without-binary -keep_c to inspect the generated C.
 - A final newline is recommended, but the last line is still processed without it.
 
@@ -123,6 +124,8 @@ int main()
 
     if score >= 10:
         print("passed")
+    elif score >= 5:
+        print("almost")
     else:
         print("try again")
 
@@ -131,7 +134,7 @@ int main()
 
     return 0
 
-The colon is accepted after if and else. Indentation is still required.
+The colon is accepted after if, elif, while, and else. Indentation is still required.
 
 
 6. while loop
@@ -423,6 +426,10 @@ Translate only and keep the generated C:
 Translate a header only and keep the generated header:
 
 ./compilateur api.H -without-binary -keep_h
+
+Show command-line help:
+
+./compilateur --help
 
 
 21. Complete program

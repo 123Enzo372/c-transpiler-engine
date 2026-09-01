@@ -1,0 +1,21 @@
+# Build outputs
+compilateur
+suite_tests
+*.exe
+*.out
+*.o
+*.obj
+*.a
+*.so
+*.dll
+*.dylib
+
+# Generated C/header artifacts
+*.gch
+test_succes.c
+
+# Editor and OS noise
+.DS_Store
+Thumbs.db
+*.swp
+*.swo

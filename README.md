@@ -7,6 +7,7 @@ compact educational language, translates `.l` files into C source files, transla
 The language keeps C close at hand, but adds a few conveniences:
 
 - indentation-based blocks, similar to Python;
+- `elif` branches for multi-way conditionals;
 - simple type inference for assignments;
 - `print(...)` with string interpolation;
 - homogeneous list literals;
@@ -70,6 +71,9 @@ Hello Ada
 By default, generated `.c` and `.h` files are temporary: they are removed after a
 successful build. Use `-keep_c` or `-keep_h` when you want to inspect them.
 
+Compiled binaries and common temporary build artifacts are ignored by Git through
+`.gitignore`.
+
 ## Command Line
 
 ```bash
@@ -83,6 +87,7 @@ Examples:
 ./compilateur main.l utils.l api.H -Wall -Wextra -o app
 ./compilateur main.l -without-binary -keep_c
 ./compilateur api.H -without-binary -keep_h
+./compilateur --help
 ```
 
 ## Options
@@ -96,13 +101,15 @@ Examples:
 | `-rm_l` | Deletes original `.l` files after a successful run. |
 | `-rm_H` | Deletes original `.H` files after a successful run. |
 | `-french` | Prints transpiler diagnostics in French. |
+| `-h`, `--help` | Prints command-line help and exits. |
 
 Unknown options that start with `-`, plus regular `.c` and `.h` files, are passed
 through to `gcc`. This lets you use flags such as `-Wall`, `-O2`, `-g`, or `-lm`.
 
 ## Syntax Rules
 
-The parser is intentionally simple. Whitespace matters.
+The parser reads source files line by line, so spaces inside strings are
+preserved. Indentation still matters.
 
 - Write one statement per line.
 - Use consistent indentation, preferably 4 spaces.
@@ -156,11 +163,14 @@ score = score + 10
 ```text
 if score >= 10:
     print("passed")
+elif score >= 5:
+    print("almost")
 else:
     print("try again")
 ```
 
-The `:` is accepted for readability. Indentation still defines the block.
+The `:` is accepted for readability after `if`, `elif`, `while`, and `else`.
+Indentation still defines the block.
 
 ### Loops
 
@@ -286,6 +296,8 @@ English by default, French when `-french` is present.
 The transpiler now reports clear errors for oversized source lines, oversized
 assignments, oversized list literals, too many list elements, malformed list
 decomposition, malformed `match` branches, and malformed `print` interpolation.
+The parser preserves each source line before translation, which avoids losing
+spacing inside strings and keeps the final line even without a trailing newline.
 
 ## `.H` Header Files
 
