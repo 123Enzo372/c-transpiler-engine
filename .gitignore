@@ -9,10 +9,15 @@ suite_tests
 *.so
 *.dll
 *.dylib
+*.gcda
+*.gcno
+*.gcov
 
 # Generated C/header artifacts
 *.gch
-test_succes.c
+.tmp/
+local_tests/
+local_tests*/
 
 # Editor and OS noise
 .DS_Store

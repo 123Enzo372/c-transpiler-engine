@@ -16,6 +16,7 @@ General advice:
 - A block ends when indentation decreases.
 - Spaces inside strings are preserved by the line-based parser.
 - Use -without-binary -keep_c to inspect the generated C.
+- Add -comments with -keep_c to include source-line comments in generated C.
 - A final newline is recommended, but the last line is still processed without it.
 
 
@@ -45,6 +46,8 @@ Hello Ada
 Source: math_tools.H
 
 #all
+import vectors
+import <stddef.h>
 
 int square(int x);
 int sum_until(int n);
@@ -60,6 +63,8 @@ Generated file: math_tools.h
 #include <stdbool.h>
 #include <math.h>
 #include <time.h>
+#include "vectors.h"
+#include <stddef.h>
 
 int square(int x);
 int sum_until(int n);
@@ -73,12 +78,17 @@ int sum_until(int n);
 int main()
     age = 42
     temperature = 19.5
+    ratio = temperature / 2.0
+    adult = age >= 18
     initial = 'A'
     message = "ready"
     active = True
+    const max_score = 20
 
     print("age={age}")
     print("temperature={temperature}")
+    print("ratio={ratio}")
+    print("adult={adult}")
     print("initial={initial}")
     print("message={message}")
     print("active={active}")
@@ -94,6 +104,10 @@ Notes:
 - A first assignment declares a variable.
 - A later assignment updates the existing variable.
 - Identifiers must start with a letter or underscore.
+- Decimal/exponent expressions and existing float/double variables infer a floating-point type.
+- Comparison and logical expressions infer bool.
+- const name = value declares a binding that cannot be reassigned.
+- Assignments to existing variables are checked when both types can be inferred.
 
 
 4. Functions
@@ -136,6 +150,21 @@ int main()
 
 The colon is accepted after if, elif, while, and else. Indentation is still required.
 
+Readable logical operators:
+
+int main()
+    score = 12
+    blocked = False
+
+    if score >= 10 and not blocked:
+        print("allowed")
+    elif score == 0 or score == 1:
+        print("small")
+
+    return 0
+
+and becomes &&, or becomes ||, and not becomes ! outside strings.
+
 
 6. while loop
 -------------
@@ -157,11 +186,25 @@ int main()
     for i in range(5):
         print("turn {i}")
 
+    for i in range(2, 6):
+        print("from two to five: {i}")
+
+    for i in range(10, 0, -2):
+        if i == 4:
+            continue
+        if i == 2:
+            break
+        print("descending by two: {i}")
+
     return 0
 
 Conceptual C translation:
 
 for (int i = 0; i < 5; i++)
+
+for (int i = 2; i < 6; i++)
+
+for (int i = 10; (-2) != 0 && ((-2) > 0 ? i < 0 : i > 0); i += (-2))
 
 
 8. print and interpolation
@@ -184,13 +227,39 @@ Interpolation uses {variable} inside a double-quoted string.
 Interpolations must be closed and cannot be empty.
 
 
+8b. input and string helpers
+----------------------------
+
+int main()
+    name = input("Your name: ")
+    copied = str_copy(name)
+    greeting = str_concat("Hello ", copied)
+
+    print(greeting)
+    print("same string={str_eq(copied, name)}")
+    print("length={str_len(greeting)}")
+
+    greeting = str_concat(greeting, "!")
+    print(greeting)
+
+    return 0
+
+input() reads one line from stdin and removes the trailing newline.
+input("prompt") prints the prompt first.
+str_copy(text) creates a mutable allocated copy.
+str_concat(left, right) allocates a new string. Reassigning a generated string
+frees the previous allocation before storing the new one.
+str_len(text) returns the string length.
+str_eq(left, right) compares strings safely.
+
+
 9. Integer lists
 ----------------
 
 int main()
     numbers = [10, 20, 30, 40]
 
-    print("length={numbers_len}")
+    print("length={len(numbers)}")
     print("first={numbers[0]}")
     print("second={numbers[1]}")
 
@@ -200,6 +269,8 @@ A list creates:
 - a dynamically allocated array named numbers;
 - a length variable named numbers_len;
 - automatic free calls before return and when the current block closes.
+
+Prefer len(numbers) in source code. It is translated to numbers_len.
 
 
 10. Lists of other types
@@ -223,6 +294,50 @@ Rejected example:
 int main()
     mixed = [1, 2.5, "text"]
     return 0
+
+
+10b. Mutating and searching lists
+---------------------------------
+
+int main()
+    numbers = [1, 2, 3]
+    append(numbers, 4)
+    insert(numbers, 1, 99)
+    pop(numbers)
+    append(numbers, 5)
+
+    print("length={len(numbers)}")
+    print("last={numbers[len(numbers) - 1]}")
+    print("has 99? {contains(numbers, 99)}")
+
+    words = ["alpha", "beta"]
+    append(words, "gamma")
+    insert(words, 1, "middle")
+    print("third word={words[2]}")
+
+    return 0
+
+append(list, value) expects a list already created by the language.
+It reallocates the array and increments the generated length.
+insert(list, index, value) inserts before index.
+pop(list) removes the last item when the list is not empty.
+contains(list, value) returns true when the value is present.
+Values passed to append/insert are checked against the list element type.
+
+
+10c. foreach over lists
+-----------------------
+
+int main()
+    numbers = [10, 20, 30]
+
+    for value in numbers:
+        print("value={value}")
+
+    return 0
+
+foreach loops use the list length generated by the transpiler.
+The loop body must be indented.
 
 
 11. List decomposition with ::
@@ -327,6 +442,9 @@ Unknown # lines in .l files become C comments.
 
 #all
 #linux
+import math_tools
+import "other_tools.H"
+import <stddef.h>
 
 int main()
     print("includes were added")
@@ -350,6 +468,10 @@ int main()
 .H files also support:
 - #windows, which includes windows.h
 - #mac, which includes TargetConditionals.h and Availability.h
+
+import math_tools becomes #include "math_tools.h".
+import "other_tools.H" becomes #include "other_tools.h".
+import <stddef.h> stays #include <stddef.h>.
 
 
 17. Child and parent process helpers
@@ -423,6 +545,30 @@ Translate only and keep the generated C:
 
 ./compilateur main.l -without-binary -keep_c
 
+Translate only and keep generated C/header files with the shorter option:
+
+./compilateur main.l --emit-c
+
+Translate only and keep readable generated C with source comments:
+
+./compilateur main.l -without-binary -keep_c -comments
+
+Generate C with extra spacing around top-level functions:
+
+./compilateur main.l --emit-c --pretty-c
+
+Trace what the transpiler recognizes:
+
+./compilateur main.l --emit-c --trace
+
+Show the version:
+
+./compilateur --version
+
+Explain an error code:
+
+./compilateur --explain E_ASSIGN_TYPE
+
 Translate a header only and keep the generated header:
 
 ./compilateur api.H -without-binary -keep_h
@@ -449,23 +595,43 @@ int sum_until(int n)
         total = total + i
     return total
 
-int main()
-    name = "Ada"
-    limit = 5
-    total = sum_until(limit)
-    square_of_four = square(4)
+int sum_between(int start, int stop)
+    total = 0
+    for i in range(start, stop):
+        total = total + i
+    return total
 
-    print("Hello {name}")
+int main()
+    name = input("Name: ")
+    const limit = 5
+    total = sum_until(limit)
+    between = sum_between(2, 6)
+    square_of_four = square(4)
+    copied_name = str_copy(name)
+    greeting = str_concat("Hello ", copied_name)
+
+    print(greeting)
+    print("name length = {str_len(copied_name)}")
     print("sum before {limit} = {total}")
+    print("sum from 2 to 5 = {between}")
     print("square of 4 = {square_of_four}")
 
     values = [10, 20, 30]
+    append(values, 40)
+    insert(values, 1, 15)
+    pop(values)
+    print("values length={len(values)}")
+    print("contains 15? {contains(values, 15)}")
+
+    for value in values:
+        print("foreach value={value}")
+
     head::tail = values
     print("first={head}, remaining={tail_len}")
 
     match total with
         | 0 -> print("zero")
-        | _ if total > 5 -> print("greater than five")
+        | _ if total > 5 and len(values) > 3 -> print("greater than five")
         | _ -> print("small total")
 
     match values with
@@ -484,6 +650,9 @@ Then open demo.c and compare it with demo.l.
 
 22. Common errors
 -----------------
+
+Errors include the source location, the offending line, a caret, and a suggestion
+when the transpiler can point to a useful source line.
 
 Invalid identifier:
 
@@ -522,4 +691,62 @@ Empty print interpolation:
 
 int main()
     print("value={}")
+    return 0
+
+Malformed range:
+
+int main()
+    for i in range(1, 10, 2) extra:
+        print(i)
+    return 0
+
+len on something that is not a declared list:
+
+int main()
+    name = "Ada"
+    print(len(name))
+    return 0
+
+append on something that is not a declared list:
+
+int main()
+    name = "Ada"
+    append(name, "!")
+    return 0
+
+Type mismatch in append:
+
+int main()
+    values = [1, 2, 3]
+    append(values, "bad")
+    return 0
+
+Assigning to a const:
+
+int main()
+    const limit = 10
+    limit = 20
+    return 0
+
+foreach without an indented block:
+
+int main()
+    values = [1, 2, 3]
+    for value in values:
+    return 0
+
+Typical diagnostic shape:
+
+ERROR E_APPEND_TARGET [Line 3] : append(...) expects an already declared list.
+  --> demo.l:3
+   |
+   3 |     append(name, "!")
+   |            ^
+Suggestion: Create the list first with values = [] or values = [1, 2, 3].
+
+Malformed import:
+
+import ""
+
+int main()
     return 0

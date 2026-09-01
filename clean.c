@@ -18,6 +18,11 @@ void remove_created_files(char **created_filenames, char **new_option)
         {
             if (strcmp(new_option[i], "-keep_c") == 0)
                 keep_c = 1;
+            else if (strcmp(new_option[i], "--emit-c") == 0 || strcmp(new_option[i], "-S") == 0)
+            {
+                keep_c = 1;
+                keep_h = 1;
+            }
             else if (strcmp(new_option[i], "-keep_h") == 0)
                 keep_h = 1;
         }

@@ -4,6 +4,73 @@
 #include <string.h>
 
 int flag_french = 0;
+int flag_comments = 0;
+int flag_trace = 0;
+int flag_pretty_c = 0;
+int flag_quiet = 0;
+
+#define TRANSPILER_VERSION "0.4.0"
+
+static int print_explain(const char *code)
+{
+    if (code == NULL || code[0] == '\0')
+    {
+        report_message("ERREUR : --explain nécessite un code d'erreur.\n",
+                       "ERROR : --explain requires an error code.\n");
+        return 1;
+    }
+
+    if (strcmp(code, "E_APPEND_TARGET") == 0)
+    {
+        report_message("E_APPEND_TARGET : append(...) attend une liste déjà créée par le langage.\n"
+                       "Suggestion : déclare d'abord values = [] ou values = [1, 2, 3].\n",
+                       "E_APPEND_TARGET : append(...) expects a list already created by the language.\n"
+                       "Suggestion: declare values = [] or values = [1, 2, 3] first.\n");
+    }
+    else if (strcmp(code, "E_ASSIGN_TYPE") == 0)
+    {
+        report_message("E_ASSIGN_TYPE : une affectation change le type connu d'une variable.\n"
+                       "Suggestion : utilise une nouvelle variable ou convertis explicitement côté C.\n",
+                       "E_ASSIGN_TYPE : an assignment changes the known type of a variable.\n"
+                       "Suggestion: use a new variable or convert explicitly in C.\n");
+    }
+    else if (strcmp(code, "E_CONST_ASSIGN") == 0)
+    {
+        report_message("E_CONST_ASSIGN : une constante ne peut pas être réassignée.\n"
+                       "Suggestion : crée une nouvelle variable si la valeur doit changer.\n",
+                       "E_CONST_ASSIGN : a const binding cannot be assigned again.\n"
+                       "Suggestion: create a new variable if the value needs to change.\n");
+    }
+    else if (strcmp(code, "E_RANGE_ARGS") == 0)
+    {
+        report_message("E_RANGE_ARGS : range(...) accepte 1, 2 ou 3 arguments.\n"
+                       "Suggestion : utilise range(stop), range(start, stop) ou range(start, stop, step).\n",
+                       "E_RANGE_ARGS : range(...) accepts 1, 2, or 3 arguments.\n"
+                       "Suggestion: use range(stop), range(start, stop), or range(start, stop, step).\n");
+    }
+    else if (strcmp(code, "E_IMPORT") == 0)
+    {
+        report_message("E_IMPORT : la ligne import est vide ou mal formée.\n"
+                       "Suggestion : utilise import tools, import \"tools.H\" ou import <stdio.h>.\n",
+                       "E_IMPORT : the import line is empty or malformed.\n"
+                       "Suggestion: use import tools, import \"tools.H\", or import <stdio.h>.\n");
+    }
+    else if (strcmp(code, "E_HELPER_ARGS") == 0)
+    {
+        report_message("E_HELPER_ARGS : un helper natif a reçu des arguments invalides.\n"
+                       "Suggestion : vérifie le nombre d'arguments et garde les noms de listes simples.\n",
+                       "E_HELPER_ARGS : a native helper received invalid arguments.\n"
+                       "Suggestion: check the argument count and keep list names simple.\n");
+    }
+    else
+    {
+        report_message("ERREUR : Code d'erreur inconnu '%s'.\n",
+                       "ERROR : Unknown error code '%s'.\n", code);
+        return 1;
+    }
+
+    return 0;
+}
 
 static void print_help(void)
 {
@@ -17,8 +84,16 @@ static void print_help(void)
                "Options :\n"
                "  -o <nom>          Nom du binaire final.\n"
                "  -without-binary   Traduit sans lancer gcc.\n"
+               "  --emit-c, -S      Traduit en C et conserve les fichiers générés sans lancer gcc.\n"
                "  -keep_c           Conserve les fichiers .c générés.\n"
                "  -keep_h           Conserve les fichiers .h générés.\n"
+               "  -comments         Ajoute les lignes source en commentaires dans les .c générés.\n"
+               "  --pretty-c        Ajoute une mise en forme plus lisible au C généré.\n"
+               "  --trace           Affiche les étapes reconnues pendant la traduction.\n"
+               "  --dump-ast        Alias de --trace pour inspecter la traduction.\n"
+               "  --quiet           Masque les messages de succès.\n"
+               "  --version         Affiche la version et quitte.\n"
+               "  --explain <code>  Explique un code d'erreur.\n"
                "  -rm_l             Supprime les sources .l après succès.\n"
                "  -rm_H             Supprime les sources .H après succès.\n"
                "  -french           Affiche les diagnostics en français.\n"
@@ -26,7 +101,8 @@ static void print_help(void)
                "Exemples :\n"
                "  ./compilateur main.l -o app\n"
                "  ./compilateur main.l api.H -Wall -Wextra -o app\n"
-               "  ./compilateur main.l -without-binary -keep_c\n");
+               "  ./compilateur main.l --emit-c --pretty-c\n"
+               "  ./compilateur --explain E_ASSIGN_TYPE\n");
     }
     else
     {
@@ -38,8 +114,16 @@ static void print_help(void)
                "Options:\n"
                "  -o <name>         Final executable name.\n"
                "  -without-binary   Translate without running gcc.\n"
+               "  --emit-c, -S      Translate to C, keep generated files, and do not run gcc.\n"
                "  -keep_c           Keep generated .c files.\n"
                "  -keep_h           Keep generated .h files.\n"
+               "  -comments         Add source-line comments to generated .c files.\n"
+               "  --pretty-c        Add extra readability formatting to generated C.\n"
+               "  --trace           Print recognized translation steps.\n"
+               "  --dump-ast        Alias for --trace when inspecting translation.\n"
+               "  --quiet           Hide success messages.\n"
+               "  --version         Print the version and exit.\n"
+               "  --explain <code>  Explain an error code.\n"
                "  -rm_l             Delete .l sources after success.\n"
                "  -rm_H             Delete .H sources after success.\n"
                "  -french           Print diagnostics in French.\n"
@@ -47,7 +131,8 @@ static void print_help(void)
                "Examples:\n"
                "  ./compilateur main.l -o app\n"
                "  ./compilateur main.l api.H -Wall -Wextra -o app\n"
-               "  ./compilateur main.l -without-binary -keep_c\n");
+               "  ./compilateur main.l --emit-c --pretty-c\n"
+               "  ./compilateur --explain E_ASSIGN_TYPE\n");
     }
 }
 
@@ -80,7 +165,22 @@ int main(int argc, char *argv[])
         if (strcmp(argv[i], "-french") == 0)
         {
             flag_french = 1;
-            break;
+        }
+        else if (strcmp(argv[i], "-comments") == 0)
+        {
+            flag_comments = 1;
+        }
+        else if (strcmp(argv[i], "--trace") == 0 || strcmp(argv[i], "--dump-ast") == 0)
+        {
+            flag_trace = 1;
+        }
+        else if (strcmp(argv[i], "--pretty-c") == 0)
+        {
+            flag_pretty_c = 1;
+        }
+        else if (strcmp(argv[i], "--quiet") == 0)
+        {
+            flag_quiet = 1;
         }
     }
 
@@ -90,6 +190,15 @@ int main(int argc, char *argv[])
         {
             print_help();
             return 0;
+        }
+        if (strcmp(argv[i], "--version") == 0)
+        {
+            printf("compilateur %s\n", TRANSPILER_VERSION);
+            return 0;
+        }
+        if (strcmp(argv[i], "--explain") == 0)
+        {
+            return print_explain(i + 1 < argc ? argv[i + 1] : NULL);
         }
     }
 
@@ -162,7 +271,11 @@ int main(int argc, char *argv[])
             }
             else if (strcmp(argv[i], "-rm_H") == 0 || strcmp(argv[i], "-rm_l") == 0 ||
                      strcmp(argv[i], "-keep_c") == 0 || strcmp(argv[i], "-keep_h") == 0 ||
-                     strcmp(argv[i], "-without-binary") == 0 || strcmp(argv[i], "-french") == 0)
+                     strcmp(argv[i], "-without-binary") == 0 || strcmp(argv[i], "-french") == 0 ||
+                     strcmp(argv[i], "-comments") == 0 || strcmp(argv[i], "--emit-c") == 0 ||
+                     strcmp(argv[i], "-S") == 0 || strcmp(argv[i], "--trace") == 0 ||
+                     strcmp(argv[i], "--dump-ast") == 0 || strcmp(argv[i], "--pretty-c") == 0 ||
+                     strcmp(argv[i], "--quiet") == 0)
             {
                 if (!append_argument(&new_option, &index_new_option, &size_new_option, argv[i], "new_option"))
                     goto cleanup_and_exit;
@@ -293,6 +406,11 @@ int main(int argc, char *argv[])
             without_binary = 1;
             break;
         }
+        if (strcmp(new_option[i], "--emit-c") == 0 || strcmp(new_option[i], "-S") == 0)
+        {
+            without_binary = 1;
+            break;
+        }
     }
 
     int res = 0;
@@ -313,6 +431,22 @@ int main(int argc, char *argv[])
     }
 
     remove_created_files(created_filenames, new_option);
+
+    if (!flag_quiet)
+    {
+        report_message("OK : %d fichier(s) traduit(s).\n",
+                       "OK : translated %d file(s).\n", created_count);
+        if (without_binary)
+        {
+            report_message("OK : fichiers C/header générés conservés.\n",
+                           "OK : generated C/header files were kept.\n");
+        }
+        else
+        {
+            report_message("OK : binaire généré : %s\n",
+                           "OK : generated binary: %s\n", output != NULL ? output : "a.out");
+        }
+    }
 
     for (int i = 0; new_option[i] != NULL; i++)
     {

@@ -37,7 +37,7 @@ int execute(char **filename, char *output, char **options)
             nb_files++;
         }
         
-        int total_arg = 1 + nb_options + nb_files + 1;
+        int total_arg = 2 + nb_options + nb_files + 1;
         if (output != NULL)
         {
             total_arg += 2;
@@ -53,6 +53,7 @@ int execute(char **filename, char *output, char **options)
         
         int index = 0;
         commande[index++] = "gcc";
+        commande[index++] = "-I.";
 
         for (int i = 0; i < nb_options; i++)
         {

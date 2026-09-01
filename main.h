@@ -7,6 +7,10 @@
 #include <string.h>
 
 extern int flag_french;
+extern int flag_comments;
+extern int flag_trace;
+extern int flag_pretty_c;
+extern int flag_quiet;
 
 static inline void report_message(const char *fr_format, const char *en_format, ...)
 {
