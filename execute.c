@@ -73,6 +73,16 @@ int execute(char **filename, char *output, char **options)
 
         commande[index++] = NULL;
 
+        if (!flag_quiet)
+        {
+            fprintf(stderr, "GCC:");
+            for (int i = 0; commande[i] != NULL; i++)
+            {
+                fprintf(stderr, " %s", commande[i]);
+            }
+            fprintf(stderr, "\n");
+        }
+
         execvp("gcc", commande);
 
         report_message("ERREUR SYSTEME : L'exécution du compilateur 'gcc' via execvp a échoué.\n",

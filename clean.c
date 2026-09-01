@@ -23,6 +23,12 @@ void remove_created_files(char **created_filenames, char **new_option)
                 keep_c = 1;
                 keep_h = 1;
             }
+            else if (strcmp(new_option[i], "--teach") == 0 ||
+                     strcmp(new_option[i], "--explain-generated") == 0)
+            {
+                keep_c = 1;
+                keep_h = 1;
+            }
             else if (strcmp(new_option[i], "-keep_h") == 0)
                 keep_h = 1;
         }

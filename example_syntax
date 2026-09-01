@@ -6,7 +6,7 @@ It is written for someone who has never seen the project before.
 
 File extensions:
 - .l files are translated to .c files.
-- .H files are translated to .h files with automatic include guards.
+- .H files are translated to .generated.h files with automatic include guards.
 
 General advice:
 - Write one statement per line.
@@ -52,7 +52,7 @@ import <stddef.h>
 int square(int x);
 int sum_until(int n);
 
-Generated file: math_tools.h
+Generated file: math_tools.generated.h
 
 #ifndef MATH_TOOLS_H
 #define MATH_TOOLS_H
@@ -63,7 +63,7 @@ Generated file: math_tools.h
 #include <stdbool.h>
 #include <math.h>
 #include <time.h>
-#include "vectors.h"
+#include "vectors.generated.h"
 #include <stddef.h>
 
 int square(int x);
@@ -469,9 +469,13 @@ int main()
 - #windows, which includes windows.h
 - #mac, which includes TargetConditionals.h and Availability.h
 
-import math_tools becomes #include "math_tools.h".
-import "other_tools.H" becomes #include "other_tools.h".
+import math_tools becomes #include "math_tools.generated.h".
+import "other_tools.H" becomes #include "other_tools.generated.h".
+import "other_tools.h" stays #include "other_tools.h".
 import <stddef.h> stays #include <stddef.h>.
+When a local language import exists beside the importing file, the CLI also
+adds it to the translation list. For example, import math_tools adds existing
+math_tools.H and math_tools.l automatically.
 
 
 17. Child and parent process helpers
@@ -537,6 +541,26 @@ Compile with warnings:
 
 ./compilateur main.l -Wall -Wextra -o app
 
+Translate, compile, and run in one command:
+
+./compilateur run main.l
+
+Create starter files without overwriting existing files:
+
+./compilateur init my-app
+
+Remove common local build artifacts:
+
+./compilateur clean
+
+Open the teaching REPL:
+
+./compilateur repl
+
+Print the local dependency graph:
+
+./compilateur deps main.l
+
 Compile with the math library:
 
 ./compilateur main.l -lm -o app
@@ -560,6 +584,14 @@ Generate C with extra spacing around top-level functions:
 Trace what the transpiler recognizes:
 
 ./compilateur main.l --emit-c --trace
+
+Teaching mode: keep readable C and create a .explain.txt sidecar:
+
+./compilateur main.l --teach
+
+Add an extra concrete fix line to diagnostics:
+
+./compilateur main.l --suggest-fix
 
 Show the version:
 
@@ -750,3 +782,21 @@ import ""
 
 int main()
     return 0
+
+Unexpected indentation:
+
+int main()
+    value = 1
+        bad = 2
+    return 0
+
+Missing block body:
+
+int main()
+    if true:
+    return 0
+
+Invalid function return:
+
+int value()
+    return "bad"

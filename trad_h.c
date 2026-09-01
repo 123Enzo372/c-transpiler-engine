@@ -80,6 +80,11 @@ static void report_header_hint(const char *needle, const char *fr_suggestion, co
     if (suggestion != NULL && suggestion[0] != '\0')
     {
         fprintf(stderr, flag_french ? "Suggestion : %s\n" : "Suggestion: %s\n", suggestion);
+        if (flag_suggest_fix)
+        {
+            fprintf(stderr, flag_french ? "Correction proposée : %s\n" : "Suggested fix: %s\n",
+                    suggestion);
+        }
     }
 }
 
@@ -147,11 +152,17 @@ static int parse_header_import_line(const char *line, char *out_include, size_t 
     }
     else if (len > 2 && strcmp(target + len - 2, ".H") == 0)
     {
-        target[len - 1] = 'h';
+        if (snprintf(include_path, sizeof(include_path), "%.*s.generated.h", (int)(len - 2), target) >= (int)sizeof(include_path))
+        {
+            report_message("ERREUR HEADER [%s:%d] : Import trop long.\n",
+                           "HEADER ERROR [%s:%d] : Import target is too long.\n", filename, line_num);
+            return -1;
+        }
+        safe_copy(target, sizeof(target), include_path);
     }
     else if (strchr(target, '.') == NULL)
     {
-        if (snprintf(include_path, sizeof(include_path), "%s.h", target) >= (int)sizeof(include_path))
+        if (snprintf(include_path, sizeof(include_path), "%s.generated.h", target) >= (int)sizeof(include_path))
         {
             report_message("ERREUR HEADER [%s:%d] : Import trop long.\n",
                            "HEADER ERROR [%s:%d] : Import target is too long.\n", filename, line_num);
@@ -194,18 +205,25 @@ int trad_h(char *filename, char ***text_ptr)
     }
 
     size_t len = strlen(filename);
-    char *new_name = duplicate_string(filename);
+    size_t out_len;
+    char *new_name;
+
+    if (len < 2 || strcmp(filename + len - 2, ".H") != 0)
+    {
+        report_message("ERREUR HEADER : Extension attendue .H pour '%s'.\n",
+                       "HEADER ERROR : Expected .H extension for '%s'.\n", filename);
+        return 1;
+    }
+
+    out_len = len - 2 + strlen(".generated.h") + 1;
+    new_name = malloc(out_len);
     if (new_name == NULL)
     {
         report_message("ERREUR SYSTEME : Échec d'allocation mémoire pour 'new_name'.\n",
                        "SYSTEM ERROR : Memory allocation failed for 'new_name'.\n");
         return 1;
     }
-    
-    if (len >= 2 && strcmp(filename + len - 2, ".H") == 0)
-    {
-        new_name[len - 1] = 'h';
-    }
+    snprintf(new_name, out_len, "%.*s.generated.h", (int)(len - 2), filename);
 
     FILE *file = fopen(new_name, "w");
     if (file == NULL)

@@ -2,7 +2,7 @@
 
 This project is a small source-to-source transpiler written in C. It reads a
 compact educational language, translates `.l` files into C source files, translates
-`.H` files into guarded C headers, and can call `gcc` to build the final executable.
+`.H` files into guarded generated C headers, and can call `gcc` to build the final executable.
 
 The language keeps C close at hand, but adds a few conveniences:
 
@@ -80,7 +80,7 @@ Hello Ada
 | Input | Output | Purpose |
 | --- | --- | --- |
 | `.l` | `.c` | Translates the custom language into C. |
-| `.H` | `.h` | Creates a C header with an automatic include guard. |
+| `.H` | `.generated.h` | Creates a C header with an automatic include guard. |
 | `.c` / `.h` | passed to `gcc` | Standard C files can be compiled alongside generated files. |
 
 By default, generated `.c` and `.h` files are temporary: they are removed after a
@@ -99,6 +99,13 @@ Examples:
 
 ```bash
 ./compilateur main.l -o app
+./compilateur run main.l
+./compilateur init my-app
+./compilateur clean
+./compilateur repl
+./compilateur deps main.l
+./compilateur main.l --teach
+./compilateur main.l --explain-generated --suggest-fix
 ./compilateur main.l utils.l api.H -Wall -Wextra -o app
 ./compilateur main.l -without-binary -keep_c
 ./compilateur main.l --emit-c --pretty-c
@@ -114,6 +121,11 @@ Examples:
 | Option | Description |
 | --- | --- |
 | `-o <name>` | Sets the final executable name passed to `gcc`. |
+| `run <source.l>` | Translates, compiles, then runs the produced binary. |
+| `init [name]` | Creates a small starter project without overwriting existing files. |
+| `clean`, `--clean` | Removes common build artifacts such as local binaries and `.gch` files. |
+| `repl` | Opens a small teaching REPL. Use `:run`, `:show`, `:reset`, and `:quit`. |
+| `deps <source>` | Prints the local import graph resolved by the CLI. |
 | `-without-binary` | Translates sources but does not run `gcc`. |
 | `--emit-c`, `-S` | Translates sources, keeps generated `.c`/`.h` files, and does not run `gcc`. |
 | `-keep_c` | Keeps generated `.c` files after the build. |
@@ -122,6 +134,10 @@ Examples:
 | `--pretty-c` | Adds extra spacing around top-level functions in generated C. |
 | `--trace`, `--dump-ast` | Prints recognized translation steps while translating. |
 | `--quiet` | Hides success messages while keeping errors visible. |
+| `--no-color` | Disables ANSI colors in diagnostics. Colors are only used on interactive terminals. |
+| `--teach` | Enables readable generated C, source comments, concrete suggestions, and `.explain.txt` output. |
+| `--explain-generated` | Writes a `.c.explain.txt` file that maps source lines to generated C. |
+| `--suggest-fix` | Adds an extra concrete fix line to diagnostics that already have suggestions. |
 | `--version` | Prints the transpiler version and exits. |
 | `--explain <code>` | Prints a short explanation and suggestion for an error code. |
 | `-rm_l` | Deletes original `.l` files after a successful run. |
@@ -390,10 +406,18 @@ import <stdio.h>
 These become:
 
 ```c
-#include "math_tools.h"
-#include "other_tools.h"
+#include "math_tools.generated.h"
+#include "other_tools.generated.h"
 #include <stdio.h>
 ```
+
+The CLI also scans local language imports before translation. If `main.l`
+contains `import tools`, existing `tools.H` and `tools.l` files beside `main.l`
+are added automatically to the translation list. `import tools` and
+`import "tools.H"` include `tools.generated.h`, which avoids `.H`/`.h` filename
+collisions on case-insensitive file systems. `import "tools.h"` still includes a
+regular C header. System imports such as `import <stdio.h>` stay as normal C
+includes.
 
 | Directive | Generated C |
 | --- | --- |
@@ -429,7 +453,9 @@ The transpiler now reports clear errors for oversized source lines, oversized
 assignments, oversized list literals, too many list elements, malformed list
 decomposition, malformed `match` branches, malformed `print` interpolation,
 malformed helper arguments, invalid `range(...)` syntax, invalid `len(...)` or
-`append(...)` targets, and malformed `import ...` lines.
+`append(...)` targets, malformed `import ...` lines, unexpected indentation,
+missing block bodies, malformed function parameters, and incompatible return
+values.
 The parser preserves each source line before translation, which avoids losing
 spacing inside strings and keeps the final line even without a trailing newline.
 
@@ -437,7 +463,9 @@ Generated C checks dynamic allocations from list literals, `append(...)`,
 `insert(...)`, `input(...)`, `str_copy(...)`, and `str_concat(...)`. Before a
 generated early `return`, allocated pointers are freed once per name and then set
 to `NULL`. Runtime helpers live in `runtime.h`, which is included automatically
-by generated `.c` files.
+by generated `.c` files. Function parameters from simple C-style signatures are
+visible inside the function body, and `return` statements are checked against the
+declared return type when the transpiler can infer the returned expression.
 
 Error codes can be explained from the CLI:
 
@@ -447,8 +475,8 @@ Error codes can be explained from the CLI:
 
 ## `.H` Header Files
 
-`.H` files are translated into `.h` files and wrapped in an include guard generated
-from the file name.
+`.H` files are translated into `.generated.h` files and wrapped in an include
+guard generated from the file name.
 
 Input `maths.H`:
 
@@ -460,7 +488,7 @@ import <stddef.h>
 int square(int x);
 ```
 
-Output `maths.h`:
+Output `maths.generated.h`:
 
 ```c
 #ifndef MATHS_H
@@ -472,7 +500,7 @@ Output `maths.h`:
 #include <stdbool.h>
 #include <math.h>
 #include <time.h>
-#include "vectors.h"
+#include "vectors.generated.h"
 #include <stddef.h>
 
 int square(int x);
@@ -490,8 +518,10 @@ Recognized `.H` directives:
 | `#mac` | `TargetConditionals.h`, `Availability.h` |
 
 `.H` files also support the same ergonomic `import ...` syntax as `.l` files:
-`import tools` becomes `#include "tools.h"`, `import "tools.H"` becomes
-`#include "tools.h"`, and `import <stddef.h>` stays a system include.
+`import tools` becomes `#include "tools.generated.h"`,
+`import "other_tools.H"` becomes `#include "other_tools.generated.h"`,
+`import "tools.h"` keeps `#include "tools.h"`, and `import <stddef.h>` stays a
+system include.
 
 ## Complete Example
 
@@ -548,6 +578,12 @@ Inspect generated C with source-line comments:
 ./compilateur demo.l -without-binary -keep_c -comments
 ```
 
+Teaching mode keeps readable C and writes a sidecar explanation:
+
+```bash
+./compilateur demo.l --teach
+```
+
 Run the local verification suite:
 
 ```bash
@@ -562,6 +598,10 @@ More detailed references are available in:
 - `docs/tutorial.md`
 - `docs/language_reference.md`
 - `docs/errors.md`
+
+Basic VS Code language support is available in `vscode-language/`. Open that
+folder in VS Code and press `F5` to test syntax highlighting and snippets in an
+Extension Development Host.
 
 
 ## Known Limits

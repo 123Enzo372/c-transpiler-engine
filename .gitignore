@@ -15,6 +15,8 @@ suite_tests
 
 # Generated C/header artifacts
 *.gch
+*.generated.h
+*.c.explain.txt
 .tmp/
 local_tests/
 local_tests*/

@@ -1,0 +1,61 @@
+{
+  "name": "custom-language-support",
+  "displayName": "Custom Language Support",
+  "description": "Syntax highlighting and snippets for the educational C transpiler language.",
+  "version": "0.1.0",
+  "publisher": "local",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "custom-language",
+        "aliases": [
+          "Custom Language",
+          "lang-l"
+        ],
+        "extensions": [
+          ".l"
+        ],
+        "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "custom-language-header",
+        "aliases": [
+          "Custom Language Header",
+          "lang-H"
+        ],
+        "extensions": [
+          ".H"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "custom-language",
+        "scopeName": "source.custom-language",
+        "path": "./syntaxes/custom-language.tmLanguage.json"
+      },
+      {
+        "language": "custom-language-header",
+        "scopeName": "source.custom-language-header",
+        "path": "./syntaxes/custom-language.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "custom-language",
+        "path": "./snippets/custom-language.code-snippets"
+      },
+      {
+        "language": "custom-language-header",
+        "path": "./snippets/custom-language.code-snippets"
+      }
+    ]
+  }
+}

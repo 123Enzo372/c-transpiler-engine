@@ -5,20 +5,47 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 extern int flag_french;
 extern int flag_comments;
 extern int flag_trace;
 extern int flag_pretty_c;
 extern int flag_quiet;
+extern int flag_no_color;
+extern int flag_explain_generated;
+extern int flag_suggest_fix;
 
 static inline void report_message(const char *fr_format, const char *en_format, ...)
 {
     va_list args;
     const char *format = flag_french ? fr_format : en_format;
+    const char *color = NULL;
+    int use_color = !flag_no_color && isatty(fileno(stderr));
+
+    if (use_color)
+    {
+        if (strncmp(format, "ERREUR", 6) == 0 || strncmp(format, "ERROR", 5) == 0 ||
+            strncmp(format, "FILE ERROR", 10) == 0 || strncmp(format, "SYSTEM ERROR", 12) == 0)
+        {
+            color = "\033[31m";
+        }
+        else if (strncmp(format, "AVERTISSEMENT", 13) == 0 || strncmp(format, "WARNING", 7) == 0)
+        {
+            color = "\033[33m";
+        }
+        else if (strncmp(format, "OK", 2) == 0)
+        {
+            color = "\033[32m";
+        }
+    }
 
     va_start(args, en_format);
+    if (color != NULL)
+        fputs(color, stderr);
     vfprintf(stderr, format, args);
+    if (color != NULL)
+        fputs("\033[0m", stderr);
     va_end(args);
 }
 

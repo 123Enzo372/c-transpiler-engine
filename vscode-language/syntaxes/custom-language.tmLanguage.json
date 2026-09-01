@@ -1,0 +1,62 @@
+{
+  "scopeName": "source.custom-language",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#keywords" },
+    { "include": "#helpers" },
+    { "include": "#types" },
+    { "include": "#numbers" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        { "name": "comment.line.number-sign.custom-language", "match": "#.*$" },
+        { "name": "comment.line.double-slash.custom-language", "match": "//.*$" },
+        {
+          "name": "comment.block.custom-language",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.custom-language",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            { "name": "constant.other.placeholder.custom-language", "match": "\\{[^}]+\\}" }
+          ]
+        },
+        { "name": "string.quoted.single.custom-language", "match": "'([^'\\\\]|\\\\.)*'" }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        { "name": "keyword.control.custom-language", "match": "\\b(if|elif|else|while|for|in|match|with|return|break|continue)\\b" },
+        { "name": "keyword.operator.word.custom-language", "match": "\\b(and|or|not)\\b" },
+        { "name": "storage.modifier.custom-language", "match": "\\bconst\\b" },
+        { "name": "constant.language.boolean.custom-language", "match": "\\b(true|false|True|False)\\b" },
+        { "name": "keyword.control.import.custom-language", "match": "^\\s*import\\b" }
+      ]
+    },
+    "helpers": {
+      "patterns": [
+        { "name": "support.function.custom-language", "match": "\\b(print|range|len|append|insert|pop|contains|input|str_copy|str_concat|str_len|str_eq)\\s*(?=\\()" },
+        { "name": "keyword.other.directive.custom-language", "match": "^\\s*#(all|linux|windows|mac|pipe|process|enfant|parent)(\\s+basic)?\\b" }
+      ]
+    },
+    "types": {
+      "patterns": [
+        { "name": "storage.type.custom-language", "match": "\\b(int|float|double|char|bool|void|long|short|unsigned|pid_t)\\b" }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        { "name": "constant.numeric.custom-language", "match": "\\b[0-9]+(\\.[0-9]+)?([eE][+-]?[0-9]+)?[fF]?\\b" }
+      ]
+    }
+  }
+}

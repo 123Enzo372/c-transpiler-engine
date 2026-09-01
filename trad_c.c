@@ -36,12 +36,17 @@ static const char *diagnostic_filename = NULL;
 static int diagnostic_line_num = 0;
 static char diagnostic_source_line[2048] = {0};
 static char pending_foreach_decl[256] = {0};
+static char pending_block_kind[64] = {0};
+static int pending_block_line = 0;
+static char pending_function_return_type[16] = {0};
+static char function_return_stack[MAX_INDENT_LEVELS][16];
 static char emitted_includes[128][512];
 static int emitted_include_count = 0;
 
 static bool transform_expression(const char *input, char *output, size_t output_size, int line_num);
 static const char *infer_expression_type(const char *val);
 static bool add_symbol_ex(const char *name, const char *type, int scope_level, int line_num, bool is_const);
+static int parse_arguments(const char *args_src, char args[][256], int max_args, int line_num);
 
 static void trim_trailing_whitespace(char *str)
 {
@@ -139,6 +144,11 @@ static void report_source_hint(int line_num, const char *needle,
     if (suggestion != NULL && suggestion[0] != '\0')
     {
         fprintf(stderr, flag_french ? "Suggestion : %s\n" : "Suggestion: %s\n", suggestion);
+        if (flag_suggest_fix)
+        {
+            fprintf(stderr, flag_french ? "Correction proposée : %s\n" : "Suggested fix: %s\n",
+                    suggestion);
+        }
     }
 }
 
@@ -238,6 +248,18 @@ static void trace_translation(int line_num, const char *kind, const char *detail
     if (detail != NULL && detail[0] != '\0')
         fprintf(stderr, " %s", detail);
     fprintf(stderr, "\n");
+}
+
+static void require_block_after(const char *kind, int line_num)
+{
+    safe_copy(pending_block_kind, sizeof(pending_block_kind), kind);
+    pending_block_line = line_num;
+}
+
+static void clear_pending_block(void)
+{
+    pending_block_kind[0] = '\0';
+    pending_block_line = 0;
 }
 
 static bool add_allocated_ptr(const char *name, int scope_level, int line_num)
@@ -586,6 +608,16 @@ static bool emit_include_once(FILE *file, const char *include_line)
     return true;
 }
 
+static const char *current_function_return_type(int indent_level)
+{
+    for (int i = indent_level; i >= 0; i--)
+    {
+        if (function_return_stack[i][0] != '\0')
+            return function_return_stack[i];
+    }
+    return NULL;
+}
+
 static bool add_list_len_symbol(const char *list_name, int scope_level, int line_num)
 {
     char len_name[80] = {0};
@@ -667,6 +699,117 @@ static bool is_c_declaration_lhs(const char *lhs)
     char variable_name[64] = {0};
 
     return sscanf(lhs, "%15s %63s", type_name, variable_name) == 2 && is_c_type(type_name);
+}
+
+static bool parse_function_signature(const char *line, char *return_type, size_t return_type_size,
+                                     char *function_name, size_t function_name_size,
+                                     char *params, size_t params_size)
+{
+    const char *open = strchr(line, '(');
+    const char *close = strrchr(line, ')');
+    char before[160] = {0};
+
+    if (open == NULL || close == NULL || close < open || close[1] != '\0')
+        return false;
+
+    if (!copy_slice(before, sizeof(before), line, (size_t)(open - line)))
+        return false;
+    trim_trailing_whitespace(before);
+    trim_leading_whitespace(before);
+
+    if (sscanf(before, "%15s %63s", return_type, function_name) != 2 || !is_c_type(return_type))
+        return false;
+    if (!is_valid_identifier(function_name))
+        return false;
+
+    if (strlen(return_type) >= return_type_size || strlen(function_name) >= function_name_size)
+        return false;
+
+    return copy_slice(params, params_size, open + 1, (size_t)(close - open - 1));
+}
+
+static bool add_function_parameters(const char *params, int scope_level, int line_num)
+{
+    char args[16][256] = {{0}};
+    int arg_count;
+
+    if (params == NULL || params[0] == '\0')
+        return true;
+
+    arg_count = parse_arguments(params, args, 16, line_num);
+    if (arg_count < 0)
+        return false;
+
+    for (int i = 0; i < arg_count; i++)
+    {
+        char param[256] = {0};
+        char type_name[16] = {0};
+        char name[64] = {0};
+        char *name_start;
+        char *suffix;
+        bool pointer_decl = false;
+
+        if (!safe_copy(param, sizeof(param), args[i]))
+            return false;
+        trim_trailing_whitespace(param);
+        trim_leading_whitespace(param);
+        if (strcmp(param, "void") == 0 || param[0] == '\0')
+            continue;
+
+        if (sscanf(param, "%15s", type_name) != 1 || !is_c_type(type_name))
+        {
+            report_message("ERREUR E_PARAM_TYPE [Ligne %d] : Paramètre de fonction mal typé '%s'.\n",
+                           "ERROR E_PARAM_TYPE [Line %d] : Function parameter has an invalid type '%s'.\n",
+                           line_num, param);
+            report_source_hint(line_num, param,
+                               "Utilise une forme simple comme int value ou char *name.",
+                               "Use a simple form such as int value or char *name.");
+            return false;
+        }
+
+        name_start = param + strlen(type_name);
+        while (*name_start == ' ' || *name_start == '\t')
+            name_start++;
+        while (*name_start == '*')
+        {
+            pointer_decl = true;
+            name_start++;
+            while (*name_start == ' ' || *name_start == '\t')
+                name_start++;
+        }
+
+        if (!safe_copy(name, sizeof(name), name_start))
+            return false;
+        trim_trailing_whitespace(name);
+        suffix = strpbrk(name, "[],");
+        if (suffix != NULL)
+            *suffix = '\0';
+
+        if (!is_valid_identifier(name))
+        {
+            report_message("ERREUR E_PARAM_TYPE [Ligne %d] : Nom de paramètre invalide '%s'.\n",
+                           "ERROR E_PARAM_TYPE [Line %d] : Invalid parameter name '%s'.\n",
+                           line_num, name);
+            report_source_hint(line_num, name,
+                               "Donne un nom simple au paramètre, par exemple int count.",
+                               "Give the parameter a simple name, for example int count.");
+            return false;
+        }
+
+        if (pointer_decl)
+        {
+            char symbol_type[32] = {0};
+            snprintf(symbol_type, sizeof(symbol_type), "%s*", type_name);
+            if (!add_symbol(name, symbol_type, scope_level, line_num))
+                return false;
+        }
+        else if (!add_symbol(name, type_name, scope_level, line_num))
+        {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 static bool is_identifier_char(char c)
@@ -1244,10 +1387,18 @@ static bool parse_import_line(const char *line, char *out_include, size_t out_si
         }
     }
     else if (len > 2 && strcmp(target + len - 2, ".H") == 0)
-        target[len - 1] = 'h';
+    {
+        if (snprintf(include_path, sizeof(include_path), "%.*s.generated.h", (int)(len - 2), target) >= (int)sizeof(include_path))
+        {
+            report_message("ERREUR [Ligne %d] : Import trop long.\n",
+                           "ERROR [Line %d] : Import target is too long.\n", line_num);
+            return false;
+        }
+        safe_copy(target, sizeof(target), include_path);
+    }
     else if (strchr(target, '.') == NULL)
     {
-        if (snprintf(include_path, sizeof(include_path), "%s.h", target) >= (int)sizeof(include_path))
+        if (snprintf(include_path, sizeof(include_path), "%s.generated.h", target) >= (int)sizeof(include_path))
         {
             report_message("ERREUR [Ligne %d] : Import trop long.\n",
                            "ERROR [Line %d] : Import target is too long.\n", line_num);
@@ -2313,7 +2464,10 @@ int trad_c(char *filename, char ***text_ptr)
     in_match_block = false;
     current_match_var[0] = '\0';
     memset(scope_returned, 0, sizeof(scope_returned));
+    memset(function_return_stack, 0, sizeof(function_return_stack));
     pending_foreach_decl[0] = '\0';
+    pending_function_return_type[0] = '\0';
+    clear_pending_block();
     emitted_include_count = 0;
     set_diagnostic_source(filename, 0, NULL);
 
@@ -2402,14 +2556,14 @@ int trad_c(char *filename, char ***text_ptr)
 
             if (line_len > 0)
             {
-                if (pending_foreach_decl[0] != '\0' && current_indent <= indent_stack[indent_top])
+                if (pending_block_kind[0] != '\0' && current_indent <= indent_stack[indent_top])
                 {
-                    report_message("ERREUR [Ligne %d] : foreach attend un bloc indenté.\n",
-                                   "ERROR [Line %d] : foreach expects an indented block.\n",
-                                   line_number);
-                    report_source_hint(line_number, "for",
-                                       "Indente au moins une instruction sous la boucle foreach.",
-                                       "Indent at least one statement under the foreach loop.");
+                    report_message("ERREUR E_BLOCK_EXPECTED [Ligne %d] : '%s' attend un bloc indenté après la ligne %d.\n",
+                                   "ERROR E_BLOCK_EXPECTED [Line %d] : '%s' expects an indented block after line %d.\n",
+                                   line_number, pending_block_kind, pending_block_line);
+                    report_source_hint(line_number, NULL,
+                                       "Ajoute au moins une instruction indentée sous la ligne précédente.",
+                                       "Add at least one indented statement under the previous line.");
                     goto error_cleanup;
                 }
 
@@ -2420,6 +2574,7 @@ int trad_c(char *filename, char ***text_ptr)
                     else
                         generate_scope_frees(file, indent_top);
                     scope_returned[indent_top] = false;
+                    function_return_stack[indent_top][0] = '\0';
                     indent_top--;
                     pop_scope(indent_top);
                     print_indent(file, indent_top);
@@ -2428,6 +2583,16 @@ int trad_c(char *filename, char ***text_ptr)
 
                 if (current_indent > indent_stack[indent_top])
                 {
+                    if (pending_block_kind[0] == '\0')
+                    {
+                        report_message("ERREUR E_INDENTATION [Ligne %d] : Indentation inattendue.\n",
+                                       "ERROR E_INDENTATION [Line %d] : Unexpected indentation.\n",
+                                       line_number);
+                        report_source_hint(line_number, NULL,
+                                           "Désindente cette ligne ou ajoute une ligne qui ouvre un bloc juste avant.",
+                                           "Dedent this line or add a block-opening line immediately before it.");
+                        goto error_cleanup;
+                    }
                     if (indent_top < MAX_INDENT_LEVELS - 1)
                     {
                         print_indent(file, indent_top);
@@ -2435,6 +2600,18 @@ int trad_c(char *filename, char ***text_ptr)
                         indent_top++;
                         indent_stack[indent_top] = current_indent;
                         scope_returned[indent_top] = false;
+                        if (pending_function_return_type[0] != '\0')
+                        {
+                            safe_copy(function_return_stack[indent_top],
+                                      sizeof(function_return_stack[0]),
+                                      pending_function_return_type);
+                            pending_function_return_type[0] = '\0';
+                        }
+                        else
+                        {
+                            function_return_stack[indent_top][0] = '\0';
+                        }
+                        clear_pending_block();
                         if (pending_foreach_decl[0] != '\0')
                         {
                             print_indent(file, indent_top);
@@ -2516,6 +2693,7 @@ int trad_c(char *filename, char ***text_ptr)
                 {
                     print_indent(file, indent_top);
                     fprintf(file, "if (pid == 0)\n");
+                    require_block_after("#enfant", line_number);
                 }
                 else if (strcmp(line, "#parent basic") == 0)
                 {
@@ -2548,6 +2726,7 @@ int trad_c(char *filename, char ***text_ptr)
                 {
                     print_indent(file, indent_top);
                     fprintf(file, "else\n");
+                    require_block_after("#parent", line_number);
                 }
                 else if (strncmp(line, "import ", 7) == 0)
                 {
@@ -2574,8 +2753,10 @@ int trad_c(char *filename, char ***text_ptr)
                     if (flag_pretty_c)
                         fprintf(file, "\n");
                     if (!add_symbol("main", "int", indent_top, line_number)) goto error_cleanup;
+                    safe_copy(pending_function_return_type, sizeof(pending_function_return_type), "int");
                     print_indent(file, indent_top);
                     fprintf(file, "int main()\n");
+                    require_block_after("function", line_number);
                     trace_translation(line_number, "function", "main");
                 }
                 else
@@ -2594,6 +2775,7 @@ int trad_c(char *filename, char ***text_ptr)
                         }
                         in_match_block = true;
                         match_first_case = true;
+                        require_block_after("match", line_number);
                     }
                     else if (in_match_block && line[0] == '|')
                     {
@@ -2956,11 +3138,22 @@ int trad_c(char *filename, char ***text_ptr)
                         else if (strcmp(line, "return") == 0 || strncmp(line, "return ", 7) == 0)
                         {
                             char return_stmt[1024] = {0};
-                            generate_frees(file, indent_top);
-                            scope_returned[indent_top] = true;
-                            print_indent(file, indent_top);
+                            const char *expected_return_type = current_function_return_type(indent_top);
                             if (strcmp(line, "return") == 0)
                             {
+                                if (expected_return_type != NULL && strcmp(expected_return_type, "void") != 0)
+                                {
+                                    report_message("ERREUR E_RETURN_TYPE [Ligne %d] : Cette fonction doit retourner '%s'.\n",
+                                                   "ERROR E_RETURN_TYPE [Line %d] : This function must return '%s'.\n",
+                                                   line_number, expected_return_type);
+                                    report_source_hint(line_number, "return",
+                                                       "Ajoute une valeur après return ou change la fonction en void.",
+                                                       "Add a value after return or change the function to void.");
+                                    goto error_cleanup;
+                                }
+                                generate_frees(file, indent_top);
+                                scope_returned[indent_top] = true;
+                                print_indent(file, indent_top);
                                 fprintf(file, "return;\n");
                             }
                             else
@@ -2979,8 +3172,25 @@ int trad_c(char *filename, char ***text_ptr)
                                 trim_trailing_whitespace(return_expr);
                                 trim_leading_whitespace(return_expr);
                                 if (!transform_expression(return_expr, return_stmt, sizeof(return_stmt), line_number)) goto error_cleanup;
+                                if (expected_return_type != NULL && strcmp(expected_return_type, "void") == 0)
+                                {
+                                    report_message("ERREUR E_RETURN_TYPE [Ligne %d] : Une fonction void ne doit pas retourner de valeur.\n",
+                                                   "ERROR E_RETURN_TYPE [Line %d] : A void function must not return a value.\n",
+                                                   line_number);
+                                    report_source_hint(line_number, "return",
+                                                       "Écris seulement return, ou change le type de retour de la fonction.",
+                                                       "Write only return, or change the function return type.");
+                                    goto error_cleanup;
+                                }
+                                if (expected_return_type != NULL &&
+                                    !check_assignment_type("return", expected_return_type, return_stmt, line_number))
+                                    goto error_cleanup;
+                                generate_frees(file, indent_top);
+                                scope_returned[indent_top] = true;
+                                print_indent(file, indent_top);
                                 fprintf(file, "return %s;\n", return_stmt);
                             }
+                            trace_translation(line_number, "return", expected_return_type);
                         }
                         else if (strncmp(line, "print(", 6) == 0)
                         {
@@ -3010,6 +3220,7 @@ int trad_c(char *filename, char ***text_ptr)
                             if (!transform_expression(cond, transformed_cond, sizeof(transformed_cond), line_number)) goto error_cleanup;
                             print_indent(file, indent_top);
                             fprintf(file, "if (%s)\n", transformed_cond);
+                            require_block_after("if", line_number);
                         }
                         else if (strncmp(line, "elif ", 5) == 0)
                         {
@@ -3032,6 +3243,7 @@ int trad_c(char *filename, char ***text_ptr)
                             if (!transform_expression(cond, transformed_cond, sizeof(transformed_cond), line_number)) goto error_cleanup;
                             print_indent(file, indent_top);
                             fprintf(file, "else if (%s)\n", transformed_cond);
+                            require_block_after("elif", line_number);
                         }
                         else if (strncmp(line, "while ", 6) == 0)
                         {
@@ -3054,6 +3266,7 @@ int trad_c(char *filename, char ***text_ptr)
                             if (!transform_expression(cond, transformed_cond, sizeof(transformed_cond), line_number)) goto error_cleanup;
                             print_indent(file, indent_top);
                             fprintf(file, "while (%s)\n", transformed_cond);
+                            require_block_after("while", line_number);
                         }
                         else if (strncmp(line, "for ", 4) == 0 && strstr(line, " in range(") != NULL)
                         {
@@ -3083,6 +3296,7 @@ int trad_c(char *filename, char ***text_ptr)
                                         var_name, range_step);
                             }
                             trace_translation(line_number, "loop", "range");
+                            require_block_after("for range", line_number);
                         }
                         else if (strncmp(line, "for ", 4) == 0 && strstr(line, " in ") != NULL)
                         {
@@ -3104,11 +3318,13 @@ int trad_c(char *filename, char ***text_ptr)
                                      "%s %s = %s[%s];", elem_type, item_name, list_name, index_name);
                             if (!add_symbol(item_name, elem_type, indent_top + 1, line_number)) goto error_cleanup;
                             trace_translation(line_number, "loop", "foreach");
+                            require_block_after("foreach", line_number);
                         }
                         else if (strcmp(line, "else") == 0 || strcmp(line, "else:") == 0)
                         {
                             print_indent(file, indent_top);
                             fprintf(file, "else\n");
+                            require_block_after("else", line_number);
                         }
                         else if (strcmp(line, "break") == 0 || strcmp(line, "continue") == 0)
                         {
@@ -3118,6 +3334,13 @@ int trad_c(char *filename, char ***text_ptr)
                         else
                         {
                             char type_exp[16] = {0}, var_exp[64] = {0};
+                            char fn_return_type[16] = {0};
+                            char fn_name[64] = {0};
+                            char fn_params[512] = {0};
+                            bool function_header = parse_function_signature(line,
+                                                                            fn_return_type, sizeof(fn_return_type),
+                                                                            fn_name, sizeof(fn_name),
+                                                                            fn_params, sizeof(fn_params));
                             if (sscanf(line, "%15s %63[^ (](%*[^)])", type_exp, var_exp) == 2 && is_c_type(type_exp))
                             {
                                 if (!add_symbol(var_exp, type_exp, indent_top, line_number)) goto error_cleanup;
@@ -3142,15 +3365,19 @@ int trad_c(char *filename, char ***text_ptr)
 
                             print_indent(file, indent_top);
                             size_t l_len = strlen(line);
-                            bool function_header = is_c_type(type_exp) && strchr(line, '(') != NULL &&
-                                                   l_len > 0 && line[l_len - 1] == ')';
                             if (function_header)
                             {
                                 if (flag_pretty_c && indent_top == 0)
                                     fprintf(file, "\n");
-                                if (is_valid_identifier(var_exp) && !add_symbol(var_exp, type_exp, indent_top, line_number))
+                                if (!add_symbol(fn_name, fn_return_type, indent_top, line_number))
                                     goto error_cleanup;
-                                trace_translation(line_number, "function", var_exp);
+                                if (!add_function_parameters(fn_params, indent_top + 1, line_number))
+                                    goto error_cleanup;
+                                safe_copy(pending_function_return_type,
+                                          sizeof(pending_function_return_type),
+                                          fn_return_type);
+                                trace_translation(line_number, "function", fn_name);
+                                require_block_after("function", line_number);
                             }
                             if (l_len > 0 && line[l_len - 1] != ';' && !function_header && line[l_len - 1] != '{' && line[l_len - 1] != '}')
                             {
@@ -3169,10 +3396,11 @@ int trad_c(char *filename, char ***text_ptr)
         }
     }
 
-    if (pending_foreach_decl[0] != '\0')
+    if (pending_block_kind[0] != '\0')
     {
-        report_message("ERREUR : foreach attend un bloc indenté avant la fin du fichier.\n",
-                       "ERROR : foreach expects an indented block before end of file.\n");
+        report_message("ERREUR E_BLOCK_EXPECTED : '%s' attend un bloc indenté avant la fin du fichier.\n",
+                       "ERROR E_BLOCK_EXPECTED : '%s' expects an indented block before end of file.\n",
+                       pending_block_kind);
         goto error_cleanup;
     }
 
@@ -3183,6 +3411,7 @@ int trad_c(char *filename, char ***text_ptr)
         else
             generate_scope_frees(file, indent_top);
         scope_returned[indent_top] = false;
+        function_return_stack[indent_top][0] = '\0';
         indent_top--;
         pop_scope(indent_top);
         print_indent(file, indent_top);

@@ -17,6 +17,9 @@ Use `--explain <code>` to get a short explanation from the CLI.
 ./compilateur --explain E_ASSIGN_TYPE
 ```
 
+Use `--suggest-fix` to add an extra concrete fix line to diagnostics that already
+have source-aware suggestions.
+
 Current codes:
 
 - `E_APPEND_TARGET`: a list helper expected a declared language list.
@@ -25,6 +28,10 @@ Current codes:
 - `E_RANGE_ARGS`: `range(...)` received the wrong number of arguments.
 - `E_IMPORT`: an import line is empty or malformed.
 - `E_HELPER_ARGS`: a native helper received malformed arguments.
+- `E_BLOCK_EXPECTED`: a block-opening line has no indented body.
+- `E_INDENTATION`: a line is indented without a block opener before it.
+- `E_RETURN_TYPE`: a return statement does not match the function signature.
+- `E_PARAM_TYPE`: a function parameter does not use a simple typed form.
 
 ## Examples
 
@@ -63,3 +70,23 @@ int main()
 ```
 
 The fix is to create a new variable for the changed value.
+
+Unexpected indentation:
+
+```text
+int main()
+    value = 1
+        bad = 2
+```
+
+The fix is to remove the extra indentation or add a block-opening line before
+the indented statement.
+
+Invalid return type:
+
+```text
+int value()
+    return "bad"
+```
+
+The fix is to return an `int`, or change the function signature to `char*`.

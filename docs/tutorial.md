@@ -43,6 +43,12 @@ This keeps `demo.c` and adds comments that show the original source lines.
 ./demo
 ```
 
+Or use the shortcut:
+
+```bash
+./compilateur run demo.l
+```
+
 ## 4. Debug A Translation
 
 Use trace mode to see what the transpiler recognizes:
@@ -55,4 +61,33 @@ If an error has a code, ask for the explanation:
 
 ```bash
 ./compilateur --explain E_ASSIGN_TYPE
+```
+
+Teaching mode combines readable generated C, source comments, concrete fixes,
+and a generated explanation file:
+
+```bash
+./compilateur demo.l --teach
+```
+
+## 5. Start A New Project
+
+```bash
+./compilateur init my-app
+```
+
+The command creates starter files only when they do not already exist.
+
+## 6. Explore Quickly
+
+Try one-off lines in the REPL:
+
+```bash
+./compilateur repl
+```
+
+Inspect local language imports:
+
+```bash
+./compilateur deps demo.l
 ```
